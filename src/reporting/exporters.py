@@ -43,10 +43,111 @@ def _build_list_html(items: list[str], *, class_name: str = "text-list") -> str:
     return f'<ul class="{class_name}">{rendered}</ul>'
 
 
+def _build_per_model_comparison_html(per_model_entries: object) -> str:
+    if not isinstance(per_model_entries, list) or not per_model_entries:
+        return ""
+
+    rendered_items: list[str] = []
+    for index, entry in enumerate(per_model_entries, start=1):
+        if not isinstance(entry, dict):
+            continue
+        display_label = str(entry.get("display_label") or f"模型{index}").strip()
+        model_name = str(entry.get("model_name") or "").strip()
+        title = (
+            display_label
+            if not model_name or model_name == display_label
+            else f"{display_label}（{model_name}）"
+        )
+        meta_parts = [
+            f"分数：{escape(_format_score(entry.get('score')))}",
+        ]
+        band = str(entry.get("band") or "").strip()
+        if band:
+            meta_parts.append(f"等级：{escape(band)}")
+        summary_html = _build_list_html(_normalize_text_items(entry.get("summary")))
+        judgment_html = _build_list_html(
+            _normalize_text_items(entry.get("core_judgment"))
+        )
+        rationale_html = _build_list_html(
+            _normalize_text_items(entry.get("score_rationale"))
+        )
+        evidence_html = _build_list_html(
+            _normalize_text_items(entry.get("evidence_quotes"))
+        )
+        rendered_items.append(
+            f"""
+            <li class="comparison-item">
+              <h5>{escape(title)}</h5>
+              <p class="metric-line">{" · ".join(meta_parts)}</p>
+              <p class="subheading">摘要</p>
+              {summary_html}
+              <p class="subheading">核心判断</p>
+              {judgment_html}
+              <p class="subheading">评分依据</p>
+              {rationale_html}
+              <p class="subheading">证据摘录</p>
+              {evidence_html}
+            </li>
+            """
+        )
+
+    if not rendered_items:
+        return ""
+
+    return (
+        '<div class="comparison-block">'
+        "<h4>模型级对比</h4>"
+        '<ul class="comparison-list">'
+        f"{''.join(rendered_items)}"
+        "</ul>"
+        "</div>"
+    )
+
+
+def _build_precheck_summary_html(report: Report) -> str:
+    precheck_result = report.report_data.get("precheck_result", {})
+    if not isinstance(precheck_result, dict):
+        return ""
+
+    consensus = precheck_result.get("consensus")
+    if not isinstance(consensus, dict):
+        consensus = precheck_result
+    issues = _normalize_text_items(consensus.get("issues"))
+    evidence_quotes = _normalize_text_items(consensus.get("evidence_quotes"))
+    review_flags = _normalize_text_items(consensus.get("review_flags"))
+    recommendation = consensus.get("recommendation")
+    recommendation_html = (
+        f'<p class="note">建议：{escape(str(recommendation))}</p>'
+        if recommendation
+        else ""
+    )
+    per_model_html = (
+        _build_per_model_comparison_html(precheck_result.get("per_model"))
+        if report.report_type == "internal"
+        else ""
+    )
+    return (
+        '<section class="section">'
+        "<h2>预检提示</h2>"
+        '<p class="lead">该稿件已继续进入六维评分，但预检检测到需人工复核的风险项。</p>'
+        "<h3>风险问题</h3>"
+        f"{_build_list_html(issues)}"
+        "<h3>证据摘录</h3>"
+        f"{_build_list_html(evidence_quotes)}"
+        "<h3>复核标记</h3>"
+        f"{_build_list_html(review_flags)}"
+        f"{recommendation_html}"
+        f"{per_model_html}"
+        "</section>"
+    )
+
+
 def _build_ai_summary_html(report: Report) -> str:
     report_data = report.report_data
     if report_data.get("precheck_status") == "reject":
-        issues = _normalize_text_items(report_data.get("precheck_result", {}).get("issues"))
+        issues = _normalize_text_items(
+            report_data.get("precheck_result", {}).get("issues")
+        )
         recommendation = report_data.get("precheck_result", {}).get("recommendation")
         sections = [
             '<section class="section">',
@@ -59,6 +160,11 @@ def _build_ai_summary_html(report: Report) -> str:
             sections.append(f'<p class="note">建议：{escape(str(recommendation))}</p>')
         sections.append("</section>")
         return "".join(sections)
+    precheck_html = (
+        _build_precheck_summary_html(report)
+        if report_data.get("precheck_status") == "conditional_pass"
+        else ""
+    )
 
     dimensions = report_data.get("dimensions", [])
     analysis_items: list[str] = []
@@ -69,21 +175,30 @@ def _build_ai_summary_html(report: Report) -> str:
     for dimension in dimensions:
         if not isinstance(dimension, dict):
             continue
-        dimension_name = str(dimension.get("name_zh", "")).strip() or str(
-            dimension.get("name_en", "")
-        ).strip()
+        dimension_name = (
+            str(dimension.get("name_zh", "")).strip()
+            or str(dimension.get("name_en", "")).strip()
+        )
         if not dimension_name:
             continue
-        dimension_name_by_key[str(dimension.get("key", dimension_name))] = dimension_name
-        ai_payload = dimension.get("ai", {})
-        if isinstance(ai_payload, dict) and ai_payload.get("is_high_confidence"):
+        dimension_name_by_key[str(dimension.get("key", dimension_name))] = (
+            dimension_name
+        )
+        consensus_payload = dimension.get("consensus", {})
+        if isinstance(consensus_payload, dict) and consensus_payload.get(
+            "is_high_confidence"
+        ):
             high_confidence_count += 1
         for analysis in _normalize_text_items(
-            ai_payload.get("analysis") if isinstance(ai_payload, dict) else None
+            consensus_payload.get("summary")
+            if isinstance(consensus_payload, dict)
+            else None
         ):
             analysis_items.append(f"{dimension_name}：{analysis}")
         for quote in _normalize_text_items(
-            ai_payload.get("evidence_quotes") if isinstance(ai_payload, dict) else None
+            consensus_payload.get("evidence_quotes")
+            if isinstance(consensus_payload, dict)
+            else None
         ):
             evidence_items.append(f"{dimension_name}：{quote}")
 
@@ -113,28 +228,53 @@ def _build_ai_summary_html(report: Report) -> str:
     for dimension in dimensions:
         if not isinstance(dimension, dict):
             continue
-        ai_payload = dimension.get("ai", {})
-        if not isinstance(ai_payload, dict):
+        consensus_payload = dimension.get("consensus", {})
+        if not isinstance(consensus_payload, dict):
             continue
-        dimension_name = str(dimension.get("name_zh", "")).strip() or str(
-            dimension.get("name_en", "")
-        ).strip()
-        confidence_label = "高置信度" if ai_payload.get("is_high_confidence") else "需要复核"
-        analyses = _normalize_text_items(ai_payload.get("analysis"))
-        evidence_quotes = _normalize_text_items(ai_payload.get("evidence_quotes"))
+        dimension_name = (
+            str(dimension.get("name_zh", "")).strip()
+            or str(dimension.get("name_en", "")).strip()
+        )
+        confidence_label = (
+            "高置信度" if consensus_payload.get("is_high_confidence") else "需要复核"
+        )
+        consensus_summary = _normalize_text_items(consensus_payload.get("summary"))
+        consensus_judgment = _normalize_text_items(
+            consensus_payload.get("core_judgment")
+        )
+        consensus_rationale = _normalize_text_items(
+            consensus_payload.get("score_rationale")
+        )
+        review_flags = _normalize_text_items(consensus_payload.get("review_flags"))
+        analyses = consensus_summary
+        evidence_quotes = _normalize_text_items(
+            consensus_payload.get("evidence_quotes")
+        )
+        comparison_html = (
+            _build_per_model_comparison_html(dimension.get("per_model"))
+            if report.report_type == "internal"
+            else ""
+        )
         dimension_sections.append(
             f"""
             <section class="dimension-card">
               <h3>{escape(dimension_name)}</h3>
               <p class="metric-line">
-                <span>AI 均分：{escape(_format_score(ai_payload.get("mean_score")))}</span>
-                <span>标准差：{escape(_format_score(ai_payload.get("std_score")))}</span>
+                <span>AI 均分：{escape(_format_score(consensus_payload.get("mean_score")))}</span>
+                <span>标准差：{escape(_format_score(consensus_payload.get("std_score")))}</span>
                 <span>状态：{confidence_label}</span>
               </p>
-              <h4>AI 分析</h4>
+              <h4>收敛摘要</h4>
               {_build_list_html(analyses)}
+              <h4>核心判断</h4>
+              {_build_list_html(consensus_judgment)}
+              <h4>评分依据</h4>
+              {_build_list_html(consensus_rationale)}
               <h4>证据摘录</h4>
               {_build_list_html(evidence_quotes)}
+              <h4>复核标记</h4>
+              {_build_list_html(review_flags)}
+              {comparison_html}
             </section>
             """
         )
@@ -170,7 +310,7 @@ def _build_ai_summary_html(report: Report) -> str:
                 <section class="section">
                   <h3>复核提交 {escape(str(review.get("review_id", "")))}</h3>
                   <ul class="expert-list">
-                    {''.join(rendered_comments)}
+                    {"".join(rendered_comments)}
                   </ul>
                 </section>
                 """
@@ -186,6 +326,7 @@ def _build_ai_summary_html(report: Report) -> str:
         '<section class="section">'
         "<h2>AI评价摘要</h2>"
         '<p class="lead">以下内容为系统基于当前报告直接整理出的 AI 评价结论与关键输出。</p>'
+        f"{precheck_html}"
         f"{summary_cards}"
         '<section class="section"><h3>AI 主要结论</h3>'
         f"{_build_list_html(analysis_items)}"
@@ -203,7 +344,11 @@ def _build_report_html(report: Report) -> str:
     report_data = report.report_data
     evaluation_config = report_data.get("evaluation_config") or {}
     selected_models = evaluation_config.get("selected_models", [])
-    model_text = "、".join(str(model) for model in selected_models) if selected_models else "待生成"
+    model_text = (
+        "、".join(str(model) for model in selected_models)
+        if selected_models
+        else "待生成"
+    )
     rounds = evaluation_config.get("evaluation_rounds")
     paper_title = report_data.get("paper_title") or report.paper_id
     meta_items = [
@@ -211,7 +356,10 @@ def _build_report_html(report: Report) -> str:
         ("稿件标题", str(paper_title)),
         ("报告版本", str(report.version)),
         ("综合得分", _format_score(report_data.get("weighted_total"), suffix="/100")),
-        ("评测轮数", _format_score(rounds, suffix=" 轮") if rounds is not None else "待生成"),
+        (
+            "评测轮数",
+            _format_score(rounds, suffix=" 轮") if rounds is not None else "待生成",
+        ),
         ("评测模型", model_text),
     ]
     meta_cards = "".join(
@@ -258,6 +406,10 @@ def _build_report_html(report: Report) -> str:
             font-size: 12px;
             margin-top: 10px;
           }}
+          h5 {{
+            font-size: 12px;
+            margin: 8px 0 6px;
+          }}
           .meta-grid,
           .summary-grid {{
             display: grid;
@@ -296,6 +448,11 @@ def _build_report_html(report: Report) -> str:
           .note {{
             color: #334155;
           }}
+          .subheading {{
+            margin-top: 8px;
+            color: #5f6777;
+            font-weight: 600;
+          }}
           .metric-line {{
             display: flex;
             flex-wrap: wrap;
@@ -308,6 +465,20 @@ def _build_report_html(report: Report) -> str:
           }}
           li {{
             margin-bottom: 6px;
+          }}
+          .comparison-list {{
+            list-style: none;
+            padding-left: 0;
+          }}
+          .comparison-item {{
+            border-top: 1px solid #e5e7eb;
+            padding-top: 8px;
+            margin-top: 8px;
+          }}
+          .comparison-item:first-child {{
+            border-top: none;
+            padding-top: 0;
+            margin-top: 0;
           }}
           .expert-list {{
             list-style: none;
@@ -347,16 +518,34 @@ def _estimate_page_height(report: Report) -> int:
     analysis_count = 0
     evidence_count = 0
     expert_comment_count = 0
+    per_model_count = 0
+    precheck_item_count = 0
 
     if isinstance(dimensions, list):
         for dimension in dimensions:
             if not isinstance(dimension, dict):
                 continue
             ai_payload = dimension.get("ai", {})
-            if not isinstance(ai_payload, dict):
-                continue
-            analysis_count += len(_normalize_text_items(ai_payload.get("analysis")))
-            evidence_count += len(_normalize_text_items(ai_payload.get("evidence_quotes")))
+            if isinstance(ai_payload, dict):
+                analysis_count += len(_normalize_text_items(ai_payload.get("analysis")))
+                evidence_count += len(
+                    _normalize_text_items(ai_payload.get("evidence_quotes"))
+                )
+            per_model = dimension.get("per_model")
+            if isinstance(per_model, list):
+                per_model_count += len(per_model)
+    precheck_result = report_data.get("precheck_result", {})
+    if isinstance(precheck_result, dict):
+        consensus = precheck_result.get("consensus")
+        if not isinstance(consensus, dict):
+            consensus = precheck_result
+        precheck_item_count += len(_normalize_text_items(consensus.get("issues")))
+        precheck_item_count += len(
+            _normalize_text_items(consensus.get("evidence_quotes"))
+        )
+        per_model = precheck_result.get("per_model")
+        if isinstance(per_model, list):
+            per_model_count += len(per_model)
 
     expert_reviews = report_data.get("expert_reviews", [])
     if isinstance(expert_reviews, list):
@@ -369,6 +558,8 @@ def _estimate_page_height(report: Report) -> int:
         + dimension_count * 180
         + analysis_count * 42
         + evidence_count * 36
+        + precheck_item_count * 42
+        + per_model_count * 120
         + expert_comment_count * 70
     )
     return max(estimated, 900)

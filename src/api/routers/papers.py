@@ -30,7 +30,7 @@ from src.models.user import User
 
 router = APIRouter()
 
-DEFAULT_FRAMEWORK_PATH = "configs/frameworks/law-v2.3-20260421.yaml"
+DEFAULT_FRAMEWORK_PATH = "configs/frameworks/law-v2.5-20260422.yaml"
 
 
 def _parse_provider_names(provider_names: str | None) -> list[str]:

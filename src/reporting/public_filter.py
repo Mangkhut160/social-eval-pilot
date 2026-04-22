@@ -4,21 +4,27 @@ from __future__ import annotations
 def build_public_report(internal_report: dict) -> dict:
     public_dimensions = []
     for dimension in internal_report["dimensions"]:
-        public_dimensions.append(
-            {
-                "key": dimension["key"],
-                "name_zh": dimension["name_zh"],
-                "name_en": dimension["name_en"],
-                "weight": dimension["weight"],
-                "ai": {
-                    "mean_score": dimension["ai"]["mean_score"],
-                    "std_score": dimension["ai"]["std_score"],
-                    "is_high_confidence": dimension["ai"]["is_high_confidence"],
-                    "evidence_quotes": dimension["ai"].get("evidence_quotes", []),
-                    "analysis": dimension["ai"].get("analysis", []),
-                },
-            }
-        )
+        public_dimension = {
+            "key": dimension["key"],
+            "name_zh": dimension["name_zh"],
+            "name_en": dimension["name_en"],
+            "weight": dimension["weight"],
+            "ai": {
+                "evidence_quotes": dimension["ai"].get("evidence_quotes", []),
+                "analysis": dimension["ai"].get("analysis", []),
+            },
+        }
+        consensus = dimension.get("consensus")
+        if isinstance(consensus, dict):
+            public_consensus = dict(consensus)
+            public_consensus.pop("model_scores", None)
+            public_dimension["consensus"] = public_consensus
+        public_dimensions.append(public_dimension)
+
+    public_precheck_result = internal_report.get("precheck_result")
+    if isinstance(public_precheck_result, dict):
+        public_precheck_result = dict(public_precheck_result)
+        public_precheck_result.pop("per_model", None)
 
     expert_summaries = []
     for review in internal_report["expert_reviews"]:
@@ -43,7 +49,7 @@ def build_public_report(internal_report: dict) -> dict:
         "task_id": internal_report["task_id"],
         "paper_title": internal_report["paper_title"],
         "precheck_status": internal_report.get("precheck_status"),
-        "precheck_result": internal_report.get("precheck_result"),
+        "precheck_result": public_precheck_result,
         "evaluation_config": internal_report.get("evaluation_config"),
         "weighted_total": internal_report["weighted_total"],
         "radar_chart": internal_report["radar_chart"],

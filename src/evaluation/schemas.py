@@ -1,12 +1,18 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DimensionResult(BaseModel):
     dimension: str
     score: int  # 0-100
-    evidence_quotes: list[str]
-    analysis: str
+    evidence_quotes: list[str] = Field(default_factory=list)
+    analysis: str | None = None
     model_name: str
+
+    # v2.4 structured contract fields
+    band: str | None = None
+    summary: str | None = None
+    core_judgment: str | None = None
+    score_rationale: str | None = None
 
     # v2.3 optional fields for enhanced output
     strengths: list[str] | None = None

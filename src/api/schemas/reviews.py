@@ -10,6 +10,7 @@ class ReviewQueueItem(BaseModel):
     paper_status: str | None
     task_status: str
     low_confidence_dimensions: list[str]
+    review_reasons: list[str] = Field(default_factory=list)
     needs_assignment: bool
     assigned_reviews: list["AssignedReviewSummary"]
 
