@@ -63,7 +63,7 @@
             "type": "object",
             "required": ["key", "name_zh", "description", "condition"],
             "properties": {
-              "key": { "type": "string", "enum": ["pass", "conditional_pass", "manual_review"] },
+              "key": { "type": "string", "enum": ["pass", "conditional_pass", "manual_review", "reject"] },
               "name_zh": { "type": "string" },
               "description": { "type": "string" },
               "condition": { "type": "string" },

@@ -31,8 +31,9 @@ class DimensionScore(Base):
     dimension_key: Mapped[str] = mapped_column(String(100), nullable=False)
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False)
-    evidence_quotes: Mapped[dict] = mapped_column(JSON, nullable=True)
+    evidence_quotes: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     analysis: Mapped[str] = mapped_column(Text, nullable=True)
+    structured_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 

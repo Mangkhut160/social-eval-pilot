@@ -1,0 +1,1074 @@
+# 法学论文评价框架 v2.3 研究版
+# 基于 v2.2 继续优化：提升大模型可判定性，明确规则优先级和输出格式
+
+metadata:
+  name: "法学评价框架 v2.3（研究版）"
+  version: "2.3.0"
+  discipline: "法学"
+  source: "law-v2.2-20260421.yaml + 深度可操作性分析"
+  created: "2026-04-21"
+  previous_version: "2.2.0"
+  status: "research"
+  changelog: |
+    v2.3 变化（2026-04-21）：
+    【规则优先级与应用】
+    - 明确 ceiling_rules 优先级：多规则触发时取最低上限
+    - 统一 limit_rule_triggered 输出格式：结构化对象数组
+    - 明确 precheck 状态判断标准：增加具体示例
+
+    【枚举值标准化】
+    - 统一 review_flags 枚举：通用枚举 + 维度特定枚举
+    - 明确各枚举值的触发条件和处理建议
+
+    【可操作性增强】
+    - 现状洞察度：增加"至少2-3个主要流派"等可判断标准
+    - 分析框架建构力：细化"理论贴标签"判断标准，增加检测方法
+    - 结论可接受性：拉开 ceiling_rules 分数差距（50/55/65）
+    - 前瞻延展性：改进跨维度判断规则
+
+    【字数控制】
+    - 新增 output_constraints：每个维度500字，六维度总计3000字
+    - 专家核验时间约30分钟，便于快速复核
+    - 按触发规则动态调整字数上限
+
+    【治理机制完善】
+    - governance_appendix 增加具体检测方法和阈值
+    - 增加跨维度一致性检查规则
+    - 增加系统风险自动检测机制
+
+    v2.2 变化（2026-04-21）：
+    - 保留六维结构和权重，优先优化大模型可判定性
+    - 结论共识度 → 结论可接受性
+    - 学术伦理改为疑点筛查 + 人工复核
+    - 删除模型自报 confidence 字段
+    - 增加 ceiling_rules 和结构化输出
+    - 治理逻辑分离到 governance_appendix
+
+# 通用枚举定义
+enums:
+  review_flags:
+    common:
+      - key: "boundary_overlap"
+        name_zh: "维度边界模糊"
+        description: "评分依据与其他维度重叠，需人工判断归属"
+        action: "标记供专家复核，检查是否需要调整 rubric"
+      - key: "evidence_thin"
+        name_zh: "证据不足"
+        description: "文本证据不足以支撑判断，需更多上下文"
+        action: "降低该维度权重或标记为'需补充材料'"
+      - key: "none"
+        name_zh: "无需复核"
+        description: "判断清晰，无需人工介入"
+        action: "直接采纳评分"
+    dimension_specific:
+      problem_originality:
+        - key: "problem_validity_unclear"
+          name_zh: "问题是否成立不清楚"
+          description: "无法判断论文是否提出了真问题"
+          action: "需专家判断问题意识"
+      literature_insight:
+        - key: "needs_external_context"
+          name_zh: "需要外部文献数据库验证"
+          description: "无法从文内判断文献覆盖充分性"
+          action: "建议接入外部文献数据库或专家复核"
+      analytical_framework:
+        - key: "concept_instability"
+          name_zh: "概念使用不稳定"
+          description: "核心概念前后使用不一致"
+          action: "标记为概念问题，可能影响逻辑严密性"
+      logical_coherence:
+        - key: "counterargument_missing"
+          name_zh: "缺少反驳处理"
+          description: "未处理明显反对意见或例外情形"
+          action: "标记为论证不完整"
+      conclusion_consensus:
+        - key: "community_dialogue_gap"
+          name_zh: "共同体对话缺口"
+          description: "结论无法进入共同体语境"
+          action: "需专家判断是否为创新突破或自说自话"
+      forward_extension:
+        - key: "future_claim_thin"
+          name_zh: "未来延展依据薄弱"
+          description: "延展路径与正文论证脱节"
+          action: "标记为展望空泛"
+
+  precheck_status:
+    - key: "pass"
+      name_zh: "通过"
+      description: "基本符合要求，可进入六维评分"
+      condition: "三项检查均无问题"
+    - key: "conditional_pass"
+      name_zh: "有条件通过"
+      description: "存在轻微规范问题，可带着警告进入六维评分"
+      condition: "存在轻微问题，但不影响六维评分的可执行性"
+      examples:
+        - "少量引用格式不统一（如个别脚注缺页码）"
+        - "个别表述不够清晰但不影响核心论点定位"
+        - "引用规范性有小瑕疵但无明显错引或伪引"
+    - key: "manual_review"
+      name_zh: "需人工复核"
+      description: "存在明显疑点，必须先人工或借助外部工具复核"
+      condition: "存在明显疑点，可能影响六维评分的有效性"
+      examples:
+        - "学术伦理疑点（抄袭嫌疑、案例真实性疑点、数据真实性疑点）"
+        - "大量引用错误或伪引（>10%的引用存在问题）"
+        - "核心论点无法定位（结构混乱或表达不清）"
+        - "引用的判例或法条明显不存在"
+
+precheck:
+  name: "学术规范性前置检查"
+  description: "用于决定是否进入六维评分；研究版中学术伦理只做疑点筛查，不由 LLM 单独作最终不端裁决"
+  criteria:
+    - key: writing_norm
+      name_zh: "写作规范性"
+      description: "检查论文是否具有基本学术写作形态：表达清楚、结构完整、核心论点可定位"
+      pass_required: true
+    - key: citation_norm
+      name_zh: "引用规范性"
+      description: "检查引用格式、引文标注和注释使用是否基本规范，是否存在明显错引或伪引信号"
+      pass_required: true
+    - key: academic_ethics
+      name_zh: "学术伦理"
+      description: "仅做学术伦理疑点筛查：标记抄袭嫌疑、事实真实性疑点、数据/案例不可核验线索，必须进入人工或外部工具复核"
+      pass_required: true
+      review_required: true
+  prompt_template: |
+    请对这篇法学论文进行【学术规范性前置检查】。
+
+    你的任务不是作最终处分决定，而是判断该稿件是否可以继续进入六维评分，或是否必须先进入人工复核。
+
+    检查项目：
+    1. 写作规范性：论点是否可定位？结构是否基本完整？表达是否清楚到可评审？
+    2. 引用规范性：引文/注释是否基本规范？是否存在明显错引、伪引、张冠李戴的信号？
+    3. 学术伦理：是否存在需要人工核验的抄袭嫌疑、案例真实性疑点、数据真实性疑点？
+
+    输出状态判断标准（参考 enums.precheck_status）：
+    - pass：三项检查均无问题
+    - conditional_pass：存在轻微问题但不影响六维评分（如少量引用格式不统一）
+    - manual_review：存在明显疑点（如学术伦理疑点、大量引用错误、核心论点无法定位）
+
+    注意：
+    - 不要输出 reject
+    - 不要把"疑点"写成已经成立的学术不端结论
+    - 学术伦理项目只能输出风险信号和复核建议
+
+    请输出 JSON：
+    {
+      "status": "pass|conditional_pass|manual_review",
+      "issues": ["问题列表"],
+      "evidence_quotes": ["原文或注释片段"],
+      "review_flags": ["ethics_risk|citation_risk|writing_risk"],
+      "recommendation": "处理建议"
+    }
+
+scoring_structure:
+  total_max: 100
+  description: "六维度评分，总分100；研究版保留 v2.1 权重不变"
+  ceiling_rules_application: "多个 ceiling_rules 同时触发时，取最低上限（最严格规则优先）"
+
+decision_order:
+  description: "单维评分必须按固定顺序完成，禁止先凭整体印象给分"
+  steps:
+    - "定位评价对象"
+    - "抽取关键证据"
+    - "判断是否触发上限规则"
+    - "确定分档"
+    - "给出最终分数"
+    - "输出摘要与评分理由"
+
+output_contract:
+  description: "单模型、单维输出的统一结构；用于后续模型横向比较和程序校验"
+  required_fields:
+    - "dimension"
+    - "score"
+    - "band"
+    - "summary"
+    - "core_judgment"
+    - "score_rationale"
+    - "evidence_quotes"
+    - "strengths"
+    - "weaknesses"
+    - "limit_rule_triggered"
+    - "boundary_note"
+    - "review_flags"
+  field_constraints:
+    score:
+      type: "integer"
+      range: [0, 100]
+      description: "最终整数分，必须服从已触发 ceiling_rules 的最低上限"
+    band:
+      allowed_values: ["excellent", "good", "marginal", "unacceptable"]
+      description: "先分档，再在分档内给分"
+    summary:
+      max_chars: 50
+      description: "用于报告展示的一句话摘要，不写分数"
+    core_judgment:
+      max_chars: 80
+      description: "一句话说明该维是否成立，不写分数"
+    score_rationale:
+      max_chars: 120
+      description: "一句话说明为什么是这个分数而不是更高/更低"
+    evidence_quotes:
+      max_count: 2
+      max_chars_per_quote: 80
+      description: "最关键的原文证据，优先少而准"
+    strengths:
+      max_count: 2
+      max_chars_per_item: 50
+    weaknesses:
+      max_count: 2
+      max_chars_per_item: 50
+    limit_rule_triggered:
+      description: "若未触发任何规则，返回空数组 []"
+    review_flags:
+      description: "只能返回 enums.review_flags 中定义的 key"
+  guardrails:
+    - "score 缺失视为失败输出"
+    - "不得输出 Markdown 代码块"
+    - "不得输出 JSON 之外的前后缀说明"
+    - "不得输出未定义字段"
+    - "summary 不得写入分数"
+    - "core_judgment 不得写入分数"
+    - "score 必须服从触发的最低 score_ceiling"
+    - 'review_flags 无触发时返回 ["none"]'
+    - "不得同时返回 none 和其他 review flag"
+
+# 输出字数控制（便于专家核验）
+output_constraints:
+  description: "字数控制目标：每个维度500字，六维度总计3000字，专家核验时间约30分钟"
+
+  per_dimension_limits:
+    evidence_quotes:
+      max_count: 3
+      max_chars_per_quote: 80
+      description: "关键证据引用，每条不超过80字"
+    strengths:
+      max_count: 3
+      max_chars_per_item: 50
+      description: "主要优势，每条不超过50字"
+    weaknesses:
+      max_count: 3
+      max_chars_per_item: 50
+      description: "主要缺陷，每条不超过50字"
+    limit_rule_triggered:
+      max_chars_per_rule: 60
+      description: "触发规则说明，每条不超过60字"
+    boundary_note:
+      max_chars: 60
+      description: "维度边界说明，不超过60字"
+    summary:
+      max_chars: 50
+      description: "面向报告的一句话摘要，不超过50字"
+    core_judgment:
+      max_chars: 80
+      description: "一句话说明本维是否成立"
+    score_rationale:
+      max_chars: 120
+      description: "一句话说明分数依据和不上更高/更低分的原因"
+
+  triggered_adjustments:
+    ceiling_rules_triggered:
+      score_rationale_add_chars: 40
+      description: "触发上限规则时，score_rationale可增加40字，用于说明规则触发依据"
+    review_flags_non_none:
+      score_rationale_add_chars: 40
+      description: "复核标记非none时，score_rationale可增加40字，用于说明复核原因"
+    low_score_below_40:
+      score_rationale_add_chars: 30
+      description: "分数低于40分时，score_rationale可增加30字，用于说明致命缺陷"
+
+  dimension_max_chars: 500
+  total_max_chars: 3000
+
+  expert_review_guidance:
+    target_time_per_dimension: "5分钟"
+    target_time_total: "30分钟"
+    focus_points:
+      - "检查 evidence_quotes 是否准确引用原文"
+      - "验证 core_judgment 和 score_rationale 中的判断逻辑是否成立"
+      - "确认 limit_rule_triggered 是否正确触发"
+      - "判断 review_flags 是否合理标记"
+
+dimensions:
+  - key: problem_originality
+    name_zh: "问题创新性"
+    name_en: "Problem Originality"
+    weight: 0.30
+    position: 1
+    position_name: "起点"
+    ai_difficulty: "high"
+    description: |
+      评估论文是否真正提出了可争辩的法学问题，以及该问题是否触及制度、规范或解释上的枢纽位置。
+    evaluate:
+      - "先定位论文明确提出的问题句、中心争点或待解释的规范冲突"
+      - "判断该问题是否是法学问题，而不只是热点主题、政策口号或现实背景"
+      - "判断该问题是否能牵动既有解释路径、制度结构或核心争论"
+    do_not_evaluate:
+      - "不要把'首次研究'或'现实意义重大'直接当成创新"
+      - "不要用文献多少替代问题质量"
+      - "不要因为表达宏大就误判为枢纽性"
+    ceiling_rules:
+      - rule_id: "problem_originality.no_justiciable_question"
+        trigger: "只有热点主题或政策背景，无法转成可争辩的法学问题"
+        score_ceiling: 50
+        priority: 1
+        severity: "critical"
+        examples:
+          - "标题为《论新质生产力区域协调发展的法治化之道》，全文未提出可争辩的法学问题"
+      - rule_id: "problem_originality.empty_gap_claim"
+        trigger: "只宣称填补空白，但没有说明问题为什么成立"
+        score_ceiling: 70
+        priority: 2
+        severity: "major"
+        examples:
+          - "只说'该问题尚未有人研究'，但未说明为什么这是个问题"
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "明确提出法学真问题，并触及制度/规范解释的枢纽处"
+          - "问题能重组已有争论，而不是仅在既有话语里换表述"
+      good:
+        range: [60, 79]
+        indicators:
+          - "问题成立且有推进价值，但枢纽性有限"
+          - "更多是对已有争论的深入、切分或重述"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "有主题但问题意识不稳定"
+          - "现象描述多于问题提炼"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "热点词机械组合，无法形成法学问题"
+          - "宏大叙事无聚焦，问题本身虚化"
+    boundary_notes: |
+      与"现状洞察度"的边界：
+      - 本维度评"问题本身是否成立且重要"
+      - 不评文献综述是否充分，那属于现状洞察度
+    prompt_template: |
+      请对这篇法学论文的【问题创新性】进行评分（0-100分）。
+
+      必须遵循统一判断顺序（参考 decision_order）：
+      1. 找出论文明确提出的问题句或中心争点
+      2. 判断这是不是可争辩的法学问题，而非政策口号或热点主题
+      3. 判断它是否触及制度、规范或解释上的枢纽
+      4. 检查是否触发上限规则（参考 ceiling_rules）
+      5. 先确定分档 band，再给出 score
+      6. 最后输出 summary、core_judgment、score_rationale
+
+      不要把"首次研究""现实意义重大""题目宏大"直接当作高分依据。
+
+      多个上限规则同时触发时，取最低上限（最严格规则优先）。
+
+      【字数要求】（本维度总计不超过500字）：
+      - evidence_quotes：最多2条，每条不超过80字
+      - strengths/weaknesses：各最多2条，每条不超过50字
+      - limit_rule_triggered：每条不超过60字
+      - boundary_note：不超过60字
+      - summary：不超过50字
+      - core_judgment：不超过80字
+      - score_rationale：不超过120字
+
+      输出必须满足 output_contract：
+      - score 不得缺失
+      - review_flags 无触发时返回 ["none"]
+      - limit_rule_triggered 无触发时返回 []
+
+      请输出 JSON：
+      {
+        "dimension": "problem_originality",
+        "score": <0-100整数>,
+        "band": "excellent|good|marginal|unacceptable",
+        "summary": "一句话摘要",
+        "core_judgment": "一句话说明该维是否成立",
+        "score_rationale": "一句话说明为什么是这个分数",
+        "evidence_quotes": ["引用1", "引用2"],
+        "strengths": ["优势1"],
+        "weaknesses": ["缺陷1"],
+        "limit_rule_triggered": [
+          {
+            "rule_id": "problem_originality.no_justiciable_question",
+            "rule": "规则描述",
+            "score_ceiling": 50,
+            "priority": 1,
+            "evidence": "触发该规则的具体证据"
+          }
+        ],
+        "boundary_note": "说明本维度只评什么、不评什么",
+        "review_flags": ["problem_validity_unclear|boundary_overlap|evidence_thin|none"]
+      }
+
+  - key: literature_insight
+    name_zh: "现状洞察度"
+    name_en: "Literature Insight"
+    weight: 0.15
+    position: 2
+    position_name: "定位"
+    ai_difficulty: "medium"
+    description: |
+      评估论文是否讲清楚既有研究已走到哪里、核心争点是什么、本文切入的未竟点在哪里。
+    evaluate:
+      - "从正文、注释、参考文献中识别代表观点、主线争点和未竟点"
+      - "判断作者是否建立了研究地图，而不只是罗列观点"
+      - "判断本文问题是否因文献定位而变得不可回避"
+      - "检查是否覆盖该问题的核心争论（至少2-3个主要流派或代表观点）"
+      - "检查是否说明了既有研究的到达点（已解决什么）和未竟点（缺口在哪）"
+    do_not_evaluate:
+      - "不要把参考文献数量直接当成高分"
+      - "不要要求模型凭空判断'顶刊近5年覆盖率'这类外部统计"
+      - "不要把名家引用堆砌误判为洞察"
+    ceiling_rules:
+      - rule_id: "literature_insight.missing_research_frontier"
+        trigger: "只说已有研究不足，但没有说明到达点与未竟点"
+        score_ceiling: 60
+        priority: 1
+        severity: "major"
+      - rule_id: "literature_insight.literature_pileup"
+        trigger: "文献堆砌，无法区分观点流派、争点和代表文献"
+        score_ceiling: 55
+        priority: 2
+        severity: "major"
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "能概括代表观点、主线争论与未竟点"
+          - "本文问题因其定位而显得不可回避"
+          - "至少识别出2-3个主要流派或代表观点"
+      good:
+        range: [60, 79]
+        indicators:
+          - "文献掌握较扎实，能说明研究缺口"
+          - "争点提炼存在但不够锐利"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "文献综述基本停留在'谁说了什么'"
+          - "有材料但没有形成研究地图"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "无法说明既有研究已解决什么、未解决什么"
+          - "引用与论证脱节"
+    boundary_notes: |
+      与"问题创新性"的边界：
+      - 本维度评"既有研究的到达点与未竟点"
+      - 不评问题本身是否新，那属于问题创新性
+    prompt_template: |
+      请对这篇法学论文的【现状洞察度】进行评分（0-100分）。
+
+      必须遵循统一判断顺序（参考 decision_order），并先定 band 再给分。
+
+      先完成三步：
+      1. 识别作者是否交代了代表观点和核心争点（至少2-3个主要流派）
+      2. 判断作者是否说明既有研究的到达点与未竟点
+      3. 检查是否只是罗列文献、是否触发上限规则
+
+      注意：不要使用"顶刊近5年覆盖率"之类无法从文内直接验证的伪量化标准。
+
+      【字数要求】（本维度总计不超过500字）：
+      - evidence_quotes：最多2条，每条不超过80字
+      - strengths/weaknesses：各最多2条，每条不超过50字
+      - limit_rule_triggered：每条不超过60字
+      - boundary_note：不超过60字
+      - summary：不超过50字
+      - core_judgment：不超过80字
+      - score_rationale：不超过120字
+
+      请输出 JSON：
+      {
+        "dimension": "literature_insight",
+        "score": <0-100整数>,
+        "band": "excellent|good|marginal|unacceptable",
+        "summary": "一句话摘要",
+        "core_judgment": "一句话说明本维是否成立",
+        "score_rationale": "一句话说明分数依据",
+        "evidence_quotes": ["引用1", "引用2"],
+        "strengths": ["优势1"],
+        "weaknesses": ["缺陷1"],
+        "limit_rule_triggered": [
+          {
+            "rule_id": "literature_insight.missing_research_frontier",
+            "rule": "规则描述",
+            "score_ceiling": 60,
+            "priority": 1,
+            "evidence": "触发该规则的具体证据"
+          }
+        ],
+        "boundary_note": "说明为什么这是文献定位问题而不是问题创新性",
+        "review_flags": ["needs_external_context|boundary_overlap|evidence_thin|none"]
+      }
+
+  - key: analytical_framework
+    name_zh: "分析框架建构力"
+    name_en: "Analytical Framework Construction"
+    weight: 0.15
+    position: 3
+    position_name: "工具"
+    ai_difficulty: "medium"
+    description: |
+      评估论文是否形成了可操作的分析工具，包括概念界定、类型划分、规范推导步骤或比较分析框架，并且该工具被后文实际调用。
+    evaluate:
+      - "检查是否有清楚的概念界定、类型化、分析步骤或比较框架"
+      - "检查该框架是否被后文反复调用，而非只在绪论中出现"
+      - "若为判例、实证、比较法论文，可额外看裁判规则归纳、研究设计、比较基准是否清楚"
+    do_not_evaluate:
+      - "不要因为术语高级、标签新潮就给高分"
+      - "不要把材料丰富误判为框架成熟"
+      - "不要把后文论证连贯性混进本维度，那属于逻辑严密性"
+    ceiling_rules:
+      - rule_id: "analytical_framework.label_without_operationalization"
+        trigger: "理论贴标签：引入术语但无概念界定，或类型划分无边界标准"
+        score_ceiling: 55
+        priority: 1
+        severity: "major"
+        detection: "检查核心术语是否有明确定义，类型划分是否有分类标准"
+        examples:
+          - "只说'运用XX理论'但不解释该理论的核心要素"
+          - "提出类型划分但不说明分类标准和边界"
+          - "概念前后使用不一致"
+      - rule_id: "analytical_framework.framework_unused"
+        trigger: "框架只出现一次，后文并未真正调用"
+        score_ceiling: 60
+        priority: 2
+        severity: "major"
+        detection: "检查框架术语在后文中的出现频率和使用方式"
+        examples:
+          - "绪论提出三分法，但后文只用了其中一种"
+          - "框架术语在后文中未再出现"
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "建立了清楚、可操作的概念/类型/分析步骤"
+          - "框架成为后文论证的工作台，而非装饰"
+      good:
+        range: [60, 79]
+        indicators:
+          - "已有较清楚的分析框架"
+          - "具备操作性，但覆盖面或边界还可加强"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "有框架雏形，但停留在形式化分类"
+          - "概念关系松散，支撑力有限"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "理论术语堆砌，概念混乱"
+          - "分析框架与正文论证脱节"
+    boundary_notes: |
+      与"逻辑严密性"的边界：
+      - 本维度评"分析工具本身是否成立、可用"
+      - 不评这些工具在后续推理中的衔接是否严密，那属于逻辑严密性
+    prompt_template: |
+      请对这篇法学论文的【分析框架建构力】进行评分（0-100分）。
+
+      必须遵循统一判断顺序（参考 decision_order），并先定 band 再给分。
+
+      请重点检查：
+      1. 是否有可识别的概念界定、类型划分、分析步骤或比较框架
+      2. 该框架是否被后文反复调用
+      3. 是否触发"理论贴标签"或"框架未被使用"的上限规则
+
+      理论贴标签的判断标准：
+      - 核心术语无明确定义
+      - 类型划分无分类标准和边界
+      - 概念前后使用不一致
+
+      【字数要求】（本维度总计不超过500字）：
+      - evidence_quotes：最多2条，每条不超过80字
+      - strengths/weaknesses：各最多2条，每条不超过50字
+      - limit_rule_triggered：每条不超过60字
+      - boundary_note：不超过60字
+      - summary：不超过50字
+      - core_judgment：不超过80字
+      - score_rationale：不超过120字
+
+      请输出 JSON：
+      {
+        "dimension": "analytical_framework",
+        "score": <0-100整数>,
+        "band": "excellent|good|marginal|unacceptable",
+        "summary": "一句话摘要",
+        "core_judgment": "一句话说明本维是否成立",
+        "score_rationale": "一句话说明分数依据",
+        "evidence_quotes": ["引用1", "引用2"],
+        "strengths": ["优势1"],
+        "weaknesses": ["缺陷1"],
+        "limit_rule_triggered": [
+          {
+            "rule_id": "analytical_framework.label_without_operationalization",
+            "rule": "规则描述",
+            "score_ceiling": 55,
+            "priority": 1,
+            "evidence": "触发该规则的具体证据"
+          }
+        ],
+        "boundary_note": "说明这是框架问题而不是纯逻辑衔接问题",
+        "review_flags": ["concept_instability|boundary_overlap|evidence_thin|none"]
+      }
+
+  - key: logical_coherence
+    name_zh: "逻辑严密性"
+    name_en: "Logical Coherence"
+    weight: 0.25
+    position: 4
+    position_name: "骨架"
+    ai_difficulty: "medium"
+    description: |
+      评估论证推进是否形成必要链条：后一步是否回应前一步提出的问题，核心结论能否由前文材料和规范推导出来。
+    evaluate:
+      - "尝试复述论文的核心推理链"
+      - "检查关键结论能否由前文材料、案例、规范解释必要推出"
+      - "检查论文是否处理主要反驳、限制条件和例外情形"
+    do_not_evaluate:
+      - "不要把语言流畅当成逻辑严密"
+      - "不要把框架有没有提出混进来，那属于分析框架建构力"
+      - "不要用结论是否讨喜替代推理质量"
+    ceiling_rules:
+      - rule_id: "logical_coherence.broken_inference_chain"
+        trigger: "存在关键跳步：后一步不是前一步的必要回应，或核心结论无法由前文推出"
+        score_ceiling: 50
+        priority: 1
+        severity: "critical"
+        detection: "用链条复述测试和结论推出测试验证"
+        examples:
+          - "从'现行法存在问题'直接跳到'应采用XX制度'，中间缺少论证"
+          - "核心结论无法从前文材料或规范分析推导出来"
+      - rule_id: "logical_coherence.partially_supported_chain"
+        trigger: "局部论证薄弱但主线尚可"
+        score_ceiling: 70
+        priority: 2
+        severity: "minor"
+        examples:
+          - "主要论证链完整，但个别环节论证不够充分"
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "能复述清楚的推理链，顺序不可随意颠倒"
+          - "反例、限制条件或反驳处理充分"
+      good:
+        range: [60, 79]
+        indicators:
+          - "主线连贯，主要结论有支撑"
+          - "存在局部薄弱处，但不伤主骨架"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "部分段落各说各话，呼应不足"
+          - "从材料直接跳到结论的现象较多"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "论证链断裂，关键结论突兀"
+          - "段落顺序可随意重组而不影响理解"
+    boundary_notes: |
+      与"分析框架建构力"的边界：
+      - 本维度评"框架和材料如何推进结论"
+      - 不评框架本身是否新颖可操作，那属于分析框架建构力
+    prompt_template: |
+      请对这篇法学论文的【逻辑严密性】进行评分（0-100分）。
+
+      必须遵循统一判断顺序（参考 decision_order），并先定 band 再给分。
+
+      请先做两个测试：
+      1. 链条复述测试：用一句话概括每一步推理，并判断是否可随意删改
+      2. 结论推出测试：核心结论能否由前文材料、规范分析或案例推导出来
+
+      不要把"写得顺"误判为"论证严"。
+
+      【字数要求】（本维度总计不超过500字）：
+      - evidence_quotes：最多2条，每条不超过80字
+      - strengths/weaknesses：各最多2条，每条不超过50字
+      - limit_rule_triggered：每条不超过60字
+      - boundary_note：不超过60字
+      - summary：不超过50字
+      - core_judgment：不超过80字
+      - score_rationale：不超过120字
+
+      请输出 JSON：
+      {
+        "dimension": "logical_coherence",
+        "score": <0-100整数>,
+        "band": "excellent|good|marginal|unacceptable",
+        "summary": "一句话摘要",
+        "core_judgment": "一句话说明本维是否成立",
+        "score_rationale": "一句话说明分数依据",
+        "evidence_quotes": ["引用1", "引用2"],
+        "strengths": ["优势1"],
+        "weaknesses": ["缺陷1"],
+        "limit_rule_triggered": [
+          {
+            "rule_id": "logical_coherence.broken_inference_chain",
+            "rule": "规则描述",
+            "score_ceiling": 50,
+            "priority": 1,
+            "evidence": "触发该规则的具体证据"
+          }
+        ],
+        "boundary_note": "说明为什么这是逻辑链问题而不是框架问题",
+        "review_flags": ["counterargument_missing|boundary_overlap|evidence_thin|none"]
+      }
+
+  - key: conclusion_consensus
+    name_zh: "结论可接受性"
+    name_en: "Conclusion Acceptability"
+    weight: 0.10
+    position: 5
+    position_name: "落脚"
+    ai_difficulty: "high"
+    description: |
+      评估论文结论能否进入法学共同体语境并被认真回应，且在制度、判例、实践约束下具有可接受性。
+    evaluate:
+      - "检查论文是否回应规范体系、判例/实务约束和关键反对意见"
+      - "判断结论是否在中国制度语境中说得通，而不是空泛表态"
+      - "允许挑战主流，但要求挑战能够被共同体定位和回应"
+    do_not_evaluate:
+      - "不要把接近主流立场直接当作高分"
+      - "不要把'大家可能喜欢'等同于可接受性"
+      - "不要把未来研究价值混进来，那属于前瞻延展性"
+    ceiling_rules:
+      - rule_id: "conclusion_consensus.no_community_dialogue"
+        trigger: "自说自话，不回应共同体已有争论、判例或规范体系"
+        score_ceiling: 50
+        priority: 1
+        severity: "critical"
+        examples:
+          - "提出新观点但不说明与既有争论的关系"
+          - "完全不提及相关判例或规范体系"
+      - rule_id: "conclusion_consensus.detached_from_institutional_context"
+        trigger: "结论与制度语境明显脱节"
+        score_ceiling: 55
+        priority: 2
+        severity: "critical"
+        examples:
+          - "直接移植外国制度，不考虑本土适配"
+          - "提出的对策在中国制度框架下无法实施"
+      - rule_id: "conclusion_consensus.slogan_like_recommendation"
+        trigger: "结论停留在'完善立法、加强监管、健全机制'等万能药表述"
+        score_ceiling: 65
+        priority: 3
+        severity: "major"
+        examples:
+          - "对策建议空泛，缺乏具体路径"
+          - "未说明如何在现有制度框架下实施"
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "能进入共同体核心争论，并给出可被认真回应的理由"
+          - "与规范体系、判例或实务约束之间衔接清楚"
+      good:
+        range: [60, 79]
+        indicators:
+          - "具备共同体对话意识和制度可接受性"
+          - "可行性分析较扎实，但反驳处理未达最佳"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "有结论，但回应对象模糊"
+          - "对策泛化，与制度语境贴合不足"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "万能药式对策，缺乏制度约束分析"
+          - "无法被共同体定位和回应"
+    boundary_notes: |
+      与"前瞻延展性"的边界：
+      - 本维度评"当下能否被共同体和制度语境接受、回应"
+      - 不评文章是否打开后续研究空间，那属于前瞻延展性
+    prompt_template: |
+      请对这篇法学论文的【结论可接受性】进行评分（0-100分）。
+
+      必须遵循统一判断顺序（参考 decision_order），并先定 band 再给分。
+
+      重点判断：
+      1. 结论是否回应了规范体系、判例/实务约束和关键反对意见
+      2. 结论是否在中国制度语境中说得通
+      3. 是否触发"自说自话""万能药对策"或"制度脱节"的上限规则
+
+      注意：
+      - 挑战主流不扣分
+      - 真正扣分的是无法进入共同体语境、无法被认真回应
+
+      【字数要求】（本维度总计不超过500字）：
+      - evidence_quotes：最多2条，每条不超过80字
+      - strengths/weaknesses：各最多2条，每条不超过50字
+      - limit_rule_triggered：每条不超过60字
+      - boundary_note：不超过60字
+      - summary：不超过50字
+      - core_judgment：不超过80字
+      - score_rationale：不超过120字
+
+      请输出 JSON：
+      {
+        "dimension": "conclusion_consensus",
+        "score": <0-100整数>,
+        "band": "excellent|good|marginal|unacceptable",
+        "summary": "一句话摘要",
+        "core_judgment": "一句话说明本维是否成立",
+        "score_rationale": "一句话说明分数依据",
+        "evidence_quotes": ["引用1", "引用2"],
+        "strengths": ["优势1"],
+        "weaknesses": ["缺陷1"],
+        "limit_rule_triggered": [
+          {
+            "rule_id": "conclusion_consensus.no_community_dialogue",
+            "rule": "规则描述",
+            "score_ceiling": 50,
+            "priority": 1,
+            "evidence": "触发该规则的具体证据"
+          }
+        ],
+        "boundary_note": "说明这是可接受性问题而不是未来延展性问题",
+        "review_flags": ["community_dialogue_gap|boundary_overlap|evidence_thin|none"]
+      }
+
+  - key: forward_extension
+    name_zh: "前瞻延展性"
+    name_en: "Forward Extension"
+    weight: 0.05
+    position: 6
+    position_name: "开放"
+    ai_difficulty: "low"
+    description: |
+      评估论文是否在现有论证基础上打开下一轮研究、制度讨论或解释路径，而不是用口号式展望拔高。
+    evaluate:
+      - "检查论文是否基于正文论证提出后续研究或争论路径"
+      - "检查作者是否说明反对者应从哪里进入下一轮争论"
+      - "对判例分析、实务指南类论文保持克制，避免因文体特点误伤"
+    do_not_evaluate:
+      - "不要奖励与正文脱节的宏大展望"
+      - "不要因为'方向很大'就给高分"
+      - "不要用本维度弥补前四维和结论可接受性的缺陷"
+    ceiling_rules:
+      - rule_id: "forward_extension.slogan_extension"
+        trigger: "以口号式展望替代真实延展（如'具有重大意义''前景广阔'等空泛表述）"
+        score_ceiling: 45
+        priority: 1
+        severity: "major"
+        examples:
+          - "只说'具有重大理论意义和实践价值'，无具体延展路径"
+          - "展望停留在口号层面，与正文论证无关"
+      - rule_id: "forward_extension.detached_extension_path"
+        trigger: "延展路径与正文论证脱节（后续方向无法从正文结论自然推出）"
+        score_ceiling: 50
+        priority: 2
+        severity: "major"
+        examples:
+          - "正文讨论A问题，结论却说'未来可研究B、C、D问题'，但B、C、D与A无关"
+          - "延展方向无法从正文论证自然推出"
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "明确画出下一轮研究或制度争论地图"
+          - "反对者也能知道该从哪里反驳"
+      good:
+        range: [60, 79]
+        indicators:
+          - "具有真实延展价值，但路径仍稍模糊"
+          - "开放性建立在正文论证基础上"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "展望存在，但较空泛"
+          - "与正文支撑关系较弱"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "自封终结争论"
+          - "用空泛拔高替代延展"
+    boundary_notes: |
+      与"结论可接受性"的边界：
+      - 本维度评"未来还能往哪里走"
+      - 不评"当下是否能被共同体接受"，那属于结论可接受性
+    prompt_template: |
+      请对这篇法学论文的【前瞻延展性】进行评分（0-100分）。
+
+      必须遵循统一判断顺序（参考 decision_order），并先定 band 再给分。
+
+      请重点判断：
+      1. 论文是否基于正文论证打开了下一轮研究或制度讨论路径
+      2. 后续路径是否具体，而不是口号式拔高
+      3. 是否触发"口号式展望"或"延展路径与正文脱节"的上限规则
+
+      【字数要求】（本维度总计不超过500字）：
+      - evidence_quotes：最多2条，每条不超过80字
+      - strengths/weaknesses：各最多2条，每条不超过50字
+      - limit_rule_triggered：每条不超过60字
+      - boundary_note：不超过60字
+      - summary：不超过50字
+      - core_judgment：不超过80字
+      - score_rationale：不超过120字
+
+      请输出 JSON：
+      {
+        "dimension": "forward_extension",
+        "score": <0-100整数>,
+        "band": "excellent|good|marginal|unacceptable",
+        "summary": "一句话摘要",
+        "core_judgment": "一句话说明本维是否成立",
+        "score_rationale": "一句话说明分数依据",
+        "evidence_quotes": ["引用1", "引用2"],
+        "strengths": ["优势1"],
+        "weaknesses": ["缺陷1"],
+        "limit_rule_triggered": [
+          {
+            "rule_id": "forward_extension.slogan_extension",
+            "rule": "规则描述",
+            "score_ceiling": 45,
+            "priority": 1,
+            "evidence": "触发该规则的具体证据"
+          }
+        ],
+        "boundary_note": "说明为什么这是未来延展问题而不是当下可接受性问题",
+        "review_flags": ["future_claim_thin|boundary_overlap|evidence_thin|none"]
+      }
+
+evaluation_chain:
+  description: "六维判断链条；用于解释概念依赖关系，不要求 AI 按顺序打分"
+  sequence:
+    - dimension: problem_originality
+      reason: "起点：先看问题是否成立"
+    - dimension: literature_insight
+      reason: "定位：再看作者如何放入已有研究"
+    - dimension: analytical_framework
+      reason: "工具：再看是否形成可操作的分析框架"
+    - dimension: logical_coherence
+      reason: "骨架：再看这些工具和材料能否推出结论"
+    - dimension: conclusion_consensus
+      reason: "落脚：再看结论能否进入共同体与制度语境"
+    - dimension: forward_extension
+      reason: "开放：最后看论文是否打开下一轮争论"
+
+governance_appendix:
+  note: "本附录用于研究校准和系统治理，不直接进入单模型评分 prompt"
+
+  discrimination_threshold:
+    description: "好/坏论文的总分差距，用于检验框架区分度"
+    levels:
+      - level: "显著差异"
+        threshold: 50
+        action: "区分度良好"
+      - level: "明显差异"
+        threshold: 30
+        action: "可接受，但边界样本需复核"
+      - level: "区分不足"
+        threshold: 0
+        action: "需重审 rubric 或权重"
+
+  expert_review_triggers:
+    dimension_triggers:
+      - dimension: problem_originality
+        condition: "触发问题虚化、热点拼接或边界高度模糊"
+      - dimension: conclusion_consensus
+        condition: "出现共同体对话缺口、制度可接受性争议或高分异常"
+      - dimension: precheck.academic_ethics
+        condition: "任何学术伦理疑点均进入人工或外部工具复核"
+    overall_triggers:
+      - condition: "总分高但任一核心维度明显低"
+        action: "高分异常复核"
+      - condition: "多模型维度分布异常一致"
+        action: "怀疑 rubric 迎合，提升人工抽检优先级"
+
+  cross_dimension_consistency:
+    description: "跨维度一致性检查规则，用于识别不合理的评分组合"
+    rules:
+      - condition: "问题创新性 < 40 且 前瞻延展性 > 70"
+        flag: "inconsistent_innovation_extension"
+        reason: "问题虚化的论文不太可能有真实延展价值"
+        action: "标记为异常，需人工复核"
+      - condition: "逻辑严密性 < 50 且 结论可接受性 > 70"
+        flag: "inconsistent_logic_consensus"
+        reason: "论证断裂的论文结论难以被共同体接受"
+        action: "标记为异常，需人工复核"
+      - condition: "现状洞察度 < 40 且 分析框架建构力 > 75"
+        flag: "inconsistent_literature_framework"
+        reason: "文献定位不清的论文难以建立有效框架"
+        action: "标记为异常，需人工复核"
+      - condition: "所有维度评分标准差 < 5"
+        flag: "suspiciously_uniform"
+        reason: "所有维度评分过于一致，可能是AI未区分维度"
+        action: "标记为异常，需人工复核"
+
+  validation_plan:
+    description: "以正样本、负样本和中等样本校准 v2.3 的区分度与维度边界"
+    steps:
+      - "用三组正样本验证高质量论文不会塌缩成'所有维度都差不多高'"
+      - "用三组负样本验证问题虚化、文献形式化、理论贴标签能够被明显压分"
+      - "加入至少三组中等样本，验证及格线判断和边界案例"
+      - "专项检查挑战主流但论证扎实的论文，避免误伤结论可接受性"
+      - "专项检查同一证据片段跨维重复计分问题"
+
+  reliability_verification:
+    multi_model_consensus:
+      recommended_models: 3
+      max_models: 5
+      thresholds:
+        high_confidence: "标准差 <= 5"
+        medium_confidence: "标准差 > 5 且 <= 8"
+        low_confidence: "标准差 > 8，需人工复核"
+
+    system_risks:
+      - risk: "维度相关性持续升高"
+        description: "六维度评分的Pearson相关系数过高，说明区分度退化"
+        detection: "计算六维度评分的Pearson相关系数矩阵"
+        threshold: 0.7
+        action: "如果平均相关系数>0.7则预警，需重审 rubric"
+
+      - risk: "高分异常样本增多"
+        description: "总分很高但某个核心维度很低的样本比例过高"
+        detection: "统计'总分>90且任一维度<60'的样本比例"
+        threshold: 0.05
+        action: "如果比例>5%则预警，可能是AI过度拟合某些维度"
+
+      - risk: "同一证据片段被多维反复引用"
+        description: "同一段文本被多个维度作为evidence_quotes引用"
+        detection: "提取所有evidence_quotes，计算跨维度重复率"
+        threshold: 0.30
+        action: "如果重复率>30%则预警，说明维度边界仍需收窄"
+
+      - risk: "ceiling_rules触发率过低"
+        description: "上限规则很少被触发，可能是规则定义过严或AI未执行"
+        detection: "统计各ceiling_rule的触发频率"
+        threshold: 0.02
+        action: "如果某规则触发率<2%（在负样本中），需检查规则定义或prompt"
+
+      - risk: "review_flags使用率过低"
+        description: "AI很少标记review_flags，可能是过度自信"
+        detection: "统计各review_flag的使用频率"
+        threshold: 0.05
+        action: "如果所有样本中review_flags使用率<5%，需检查prompt或增加不确定性样本"
+
+  sample_anchors:
+    note: "样本锚点用于校准和验证，不直接进入评分prompt"
+    positive:
+      - paper: "林来梵《民法典编纂的宪法学透析》"
+        type: "理论型"
+        source: "法学研究 2016年第4期"
+      - paper: "蒋红珍《比例原则位阶秩序的司法适用》"
+        type: "理论型+判例分析"
+        source: "法学研究 2020年第4期"
+      - paper: "章志远《迈向公私合作型行政法》"
+        type: "理论型"
+        source: "法学研究 2019年第2期"
+    negative:
+      - paper: "《论新质生产力区域协调发展的法治化之道》"
+        type: "追热点型"
+        reason: "追热点式选题，问题虚构"
+      - paper: "《行政机关采集人脸信息活动的法治因应》"
+        type: "概念混乱型"
+        reason: "概念混乱，理论仅为装饰"
+      - paper: "《对外援助立法论纲》"
+        type: "文献形式化型"
+        reason: "文献梳理流于形式，无问题意识"
+    notes: |
+      【待补充】：
+      1. 多元类型正样本：判例分析型、实证研究型、比较法型论文
+      2. 负样本详细信息：发表来源、各维度得分、加权总分
+      3. 中等质量样本：60-75分的及格线样本

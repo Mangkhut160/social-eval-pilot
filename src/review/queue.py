@@ -43,6 +43,11 @@ def list_review_queue(db: Session) -> list[dict]:
         active_reviews = [
             review for review in reviews_by_task.get(task.id, []) if review.status != "returned"
         ]
+        review_reasons: list[str] = []
+        if task.manual_review_requested:
+            review_reasons.append("precheck_flagged")
+        if low_confidence_rows:
+            review_reasons.append("low_confidence")
         queued_tasks.append(
             {
                 "task_id": task.id,
@@ -51,6 +56,7 @@ def list_review_queue(db: Session) -> list[dict]:
                 "paper_status": paper.status if paper else None,
                 "task_status": task.status,
                 "low_confidence_dimensions": [row.dimension_key for row in low_confidence_rows],
+                "review_reasons": review_reasons,
                 "needs_assignment": len(active_reviews) == 0,
                 "assigned_reviews": [
                     {

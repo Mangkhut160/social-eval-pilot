@@ -1,13 +1,30 @@
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.core.object_storage import get_storage_backend
 from src.models.evaluation import EvaluationTask
 from src.models.paper import Paper
 from src.models.report import Report
 from src.reporting.builder import build_internal_report
 from src.reporting.public_filter import build_public_report
+
+
+def _save_radar_chart_png(report_data: dict, report_id: str) -> dict:
+    radar_chart = report_data.get("radar_chart")
+    if not isinstance(radar_chart, dict):
+        return report_data
+    png_bytes = radar_chart.pop("image_png_bytes", None)
+    if isinstance(png_bytes, bytes) and png_bytes:
+        storage = get_storage_backend()
+        key = f"charts/{report_id}-radar-chart.png"
+        stored = storage.put_bytes(key=key, content=png_bytes, content_type="image/png")
+        radar_chart["image_path"] = stored.location
+    report_data["radar_chart"] = radar_chart
+    return report_data
 
 
 def _create_report_snapshot(
@@ -21,7 +38,11 @@ def _create_report_snapshot(
 ) -> Report:
     current_reports = (
         db.query(Report)
-        .filter(Report.task_id == task_id, Report.report_type == report_type, Report.is_current.is_(True))
+        .filter(
+            Report.task_id == task_id,
+            Report.report_type == report_type,
+            Report.is_current.is_(True),
+        )
         .all()
     )
     for current in current_reports:
@@ -33,15 +54,18 @@ def _create_report_snapshot(
         .filter(Report.task_id == task_id, Report.report_type == report_type)
         .scalar()
     ) or 0
+    report_id = str(uuid.uuid4())
+    sanitized_report_data = _save_radar_chart_png(report_data, report_id)
 
     report = Report(
+        id=report_id,
         task_id=task_id,
         paper_id=paper_id,
         version=latest_version + 1,
         report_type=report_type,
         is_current=True,
         weighted_total=weighted_total,
-        report_data=report_data,
+        report_data=sanitized_report_data,
     )
     db.add(report)
     db.commit()
@@ -68,6 +92,7 @@ def generate_reports_for_task(db: Session, task_id: str) -> dict[str, Report]:
         report_data=internal_report,
         weighted_total=internal_report["weighted_total"],
     )
+
     public_snapshot = _create_report_snapshot(
         db,
         task_id=task.id,
@@ -76,6 +101,7 @@ def generate_reports_for_task(db: Session, task_id: str) -> dict[str, Report]:
         report_data=public_report,
         weighted_total=public_report["weighted_total"],
     )
+
     return {"internal": internal_snapshot, "public": public_snapshot}
 
 
@@ -91,7 +117,11 @@ def list_report_history(db: Session, task_id: str, report_type: str) -> list[Rep
 def get_current_report(db: Session, task_id: str, report_type: str) -> Report:
     report = (
         db.query(Report)
-        .filter(Report.task_id == task_id, Report.report_type == report_type, Report.is_current.is_(True))
+        .filter(
+            Report.task_id == task_id,
+            Report.report_type == report_type,
+            Report.is_current.is_(True),
+        )
         .first()
     )
     if report is not None:

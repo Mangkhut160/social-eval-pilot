@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from src.core.state_machine import ensure_valid_task_transition
 from src.evaluation.concurrent_evaluator import evaluate_dimension_concurrent
-from src.evaluation.precheck import run_precheck
+from src.evaluation.precheck import run_precheck_concurrent
 from src.evaluation.providers.factory import create_providers
 from src.ingestion.preprocessor import process_file
 from src.knowledge.loader import load_framework
@@ -16,6 +16,8 @@ from src.models.reliability import ReliabilityResult
 from src.reporting.versioning import generate_reports_for_task
 from src.reliability.calculator import calculate_reliability
 from src.reliability.threshold_checker import summarize_reliability
+
+DEFAULT_FRAMEWORK_PATH = "configs/frameworks/law-v2.5-20260422.yaml"
 
 
 async def run_evaluation_pipeline(
@@ -32,7 +34,7 @@ async def run_evaluation_pipeline(
     if paper is None or not paper.file_path:
         raise ValueError(f"Paper for task {task_id} not found or missing file")
 
-    framework = load_framework(task.framework_path or "configs/frameworks/law-v2.3-20260421.yaml")
+    framework = load_framework(task.framework_path or DEFAULT_FRAMEWORK_PATH)
     provider_names = json.loads(task.provider_names or '["openai","anthropic","deepseek"]')
     providers = provider_factory(provider_names)
     if not providers:
@@ -41,6 +43,7 @@ async def run_evaluation_pipeline(
     task.status = "processing"
     task.failure_stage = None
     task.failure_detail = None
+    task.manual_review_requested = False
     paper.status = "processing"
     db.add(task)
     db.add(paper)
@@ -48,16 +51,18 @@ async def run_evaluation_pipeline(
 
     try:
         processed_paper = process_file(paper.file_path)
-        precheck = await run_precheck(
-            providers[0],
+        precheck = await run_precheck_concurrent(
+            providers,
             framework,
             processed_paper,
             task.id,
             db,
         )
         paper.precheck_status = precheck.status
-        paper.precheck_result = precheck.model_dump()
+        paper.precheck_result = precheck.model_dump(mode="python", exclude_none=False)
+        task.manual_review_requested = precheck.status == "conditional_pass"
         db.add(paper)
+        db.add(task)
         db.commit()
 
         # Terminal precheck statuses that stop scoring
@@ -65,22 +70,6 @@ async def run_evaluation_pipeline(
             ensure_valid_task_transition(task.status, "completed")
             task.status = "completed"
             paper.status = "completed"
-            db.add(task)
-            db.add(paper)
-            db.commit()
-            generate_reports_for_task(db, task.id)
-            return {
-                "task_status": task.status,
-                "paper_status": paper.status,
-                "precheck_status": paper.precheck_status,
-                "reliability_summary": None,
-            }
-
-        if precheck.status == "manual_review":
-            ensure_valid_task_transition(task.status, "reviewing")
-            task.status = "reviewing"
-            task.manual_review_requested = True
-            paper.status = "reviewing"
             db.add(task)
             db.add(paper)
             db.commit()
@@ -106,6 +95,13 @@ async def run_evaluation_pipeline(
                 raise ValueError(f"No successful results for dimension {dimension.key}")
 
             for result in results:
+                structured_payload = result.model_dump(mode="python", exclude_none=False)
+                analysis_text = (
+                    result.analysis
+                    or result.core_judgment
+                    or result.score_rationale
+                    or result.summary
+                )
                 db.add(
                     DimensionScore(
                         task_id=task.id,
@@ -113,7 +109,8 @@ async def run_evaluation_pipeline(
                         model_name=result.model_name,
                         score=result.score,
                         evidence_quotes=result.evidence_quotes,
-                        analysis=result.analysis,
+                        analysis=analysis_text,
+                        structured_payload=structured_payload,
                     )
                 )
 

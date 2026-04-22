@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -15,8 +16,12 @@ from src.models.paper import Paper
 from src.models.report import Report
 from src.models.review import ExpertReview
 from src.models.user import User
-from src.reporting.charts import generate_radar_chart_base64
-from src.reporting.exporters import export_report_json, export_report_pdf, persist_report_export
+from src.reporting.charts import generate_radar_chart_png
+from src.reporting.exporters import (
+    export_report_json,
+    export_report_pdf,
+    persist_report_export,
+)
 from src.reporting.public_filter import build_public_report
 from src.reporting.versioning import get_report_by_version, list_report_history
 
@@ -39,6 +44,68 @@ def _normalize_text_items(value: object) -> list[str]:
     return [text] if text else []
 
 
+def _build_model_label_map(task: EvaluationTask) -> dict[str, str]:
+    if not task.provider_names:
+        return {}
+    try:
+        provider_names = json.loads(task.provider_names)
+    except json.JSONDecodeError:
+        provider_names = [
+            name.strip() for name in task.provider_names.split(",") if name.strip()
+        ]
+    if not isinstance(provider_names, list):
+        return {}
+    ordered_models = [str(name).strip() for name in provider_names if str(name).strip()]
+    return {
+        model_name: f"模型{index}"
+        for index, model_name in enumerate(ordered_models, start=1)
+    }
+
+
+def _normalized_precheck_result(
+    precheck_result: object, task: EvaluationTask
+) -> dict | None:
+    if not isinstance(precheck_result, dict):
+        return None
+
+    normalized = dict(precheck_result)
+    for key in ["issues", "evidence_quotes", "review_flags"]:
+        if key in normalized:
+            normalized[key] = _normalize_text_items(normalized.get(key))
+
+    consensus = normalized.get("consensus")
+    if isinstance(consensus, dict):
+        normalized_consensus = dict(consensus)
+        for key in ["issues", "evidence_quotes", "review_flags"]:
+            if key in normalized_consensus:
+                normalized_consensus[key] = _normalize_text_items(
+                    normalized_consensus.get(key)
+                )
+        normalized["consensus"] = normalized_consensus
+
+    model_label_map = _build_model_label_map(task)
+    per_model_entries = normalized.get("per_model")
+    if isinstance(per_model_entries, list):
+        normalized_per_model: list[dict] = []
+        for index, entry in enumerate(per_model_entries, start=1):
+            if not isinstance(entry, dict):
+                continue
+            normalized_entry = dict(entry)
+            for key in ["issues", "evidence_quotes", "review_flags"]:
+                if key in normalized_entry:
+                    normalized_entry[key] = _normalize_text_items(
+                        normalized_entry.get(key)
+                    )
+            model_name = str(normalized_entry.get("model_name", "")).strip()
+            normalized_entry["display_label"] = model_label_map.get(
+                model_name, model_name or f"模型{index}"
+            )
+            normalized_per_model.append(normalized_entry)
+        normalized["per_model"] = normalized_per_model
+
+    return normalized
+
+
 def _normalized_dimensions(report_data: dict) -> list[dict] | None:
     dimensions = report_data.get("dimensions")
     if not isinstance(dimensions, list):
@@ -59,8 +126,40 @@ def _normalized_dimensions(report_data: dict) -> list[dict] | None:
                     normalized_ai.get("evidence_quotes")
                 )
             if "analysis" in normalized_ai:
-                normalized_ai["analysis"] = _normalize_text_items(normalized_ai.get("analysis"))
+                normalized_ai["analysis"] = _normalize_text_items(
+                    normalized_ai.get("analysis")
+                )
             normalized_dimension["ai"] = normalized_ai
+
+        consensus_payload = normalized_dimension.get("consensus")
+        if isinstance(consensus_payload, dict):
+            normalized_consensus = dict(consensus_payload)
+            for key in ["evidence_quotes", "review_flags", "strengths", "weaknesses"]:
+                if key in normalized_consensus:
+                    normalized_consensus[key] = _normalize_text_items(
+                        normalized_consensus.get(key)
+                    )
+            normalized_dimension["consensus"] = normalized_consensus
+
+        per_model_entries = normalized_dimension.get("per_model")
+        if isinstance(per_model_entries, list):
+            normalized_per_model: list[dict] = []
+            for entry in per_model_entries:
+                if not isinstance(entry, dict):
+                    continue
+                normalized_entry = dict(entry)
+                for key in [
+                    "evidence_quotes",
+                    "review_flags",
+                    "strengths",
+                    "weaknesses",
+                ]:
+                    if key in normalized_entry:
+                        normalized_entry[key] = _normalize_text_items(
+                            normalized_entry.get(key)
+                        )
+                normalized_per_model.append(normalized_entry)
+            normalized_dimension["per_model"] = normalized_per_model
 
         normalized_dimensions.append(normalized_dimension)
 
@@ -104,20 +203,27 @@ def _normalized_radar_chart(report_data: dict) -> dict | None:
     if isinstance(raw_values, list):
         normalized_values = [float(value) for value in raw_values]
 
-    image_base64 = radar_chart.get("image_base64")
-    if normalized_labels and normalized_values and (
-        radar_chart.get("labels") != normalized_labels or not image_base64
+    image_png_bytes: bytes | None = None
+    if (
+        normalized_labels
+        and normalized_values
+        and (
+            radar_chart.get("labels") != normalized_labels
+            or not radar_chart.get("image_path")
+        )
     ):
-        image_base64 = generate_radar_chart_base64(normalized_labels, normalized_values)
+        image_png_bytes = generate_radar_chart_png(normalized_labels, normalized_values)
 
     return {
         "labels": normalized_labels,
         "values": normalized_values,
-        "image_base64": image_base64,
+        "image_png_bytes": image_png_bytes,
     }
 
 
-def _build_expected_public_report_data(db: Session, task_id: str, version: int) -> dict | None:
+def _build_expected_public_report_data(
+    db: Session, task_id: str, version: int
+) -> dict | None:
     internal_report = (
         db.query(Report)
         .filter(
@@ -146,7 +252,9 @@ def _build_expected_public_report_data(db: Session, task_id: str, version: int) 
 def _load_paper_and_task(db: Session, paper_id: str) -> tuple[Paper, EvaluationTask]:
     paper = db.get(Paper, paper_id)
     if paper is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found"
+        )
     task = (
         db.query(EvaluationTask)
         .filter(EvaluationTask.paper_id == paper.id)
@@ -154,7 +262,9 @@ def _load_paper_and_task(db: Session, paper_id: str) -> tuple[Paper, EvaluationT
         .first()
     )
     if task is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
+        )
     return paper, task
 
 
@@ -177,15 +287,21 @@ def _ensure_public_access(
         return
     if current_user.role == "submitter" and paper.uploaded_by == current_user.id:
         return
-    if current_user.role == "expert" and _expert_has_assignment(db, task.id, current_user.id):
+    if current_user.role == "expert" and _expert_has_assignment(
+        db, task.id, current_user.id
+    ):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
-def _ensure_internal_access(db: Session, current_user: User, task: EvaluationTask) -> None:
+def _ensure_internal_access(
+    db: Session, current_user: User, task: EvaluationTask
+) -> None:
     if current_user.role in {"admin", "editor"}:
         return
-    if current_user.role == "expert" and _expert_has_assignment(db, task.id, current_user.id):
+    if current_user.role == "expert" and _expert_has_assignment(
+        db, task.id, current_user.id
+    ):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
@@ -200,7 +316,9 @@ def _ensure_report_available(
     if task.status in REPORT_READY_STATUSES:
         return
 
-    query = db.query(Report.id).filter(Report.task_id == task.id, Report.report_type == report_type)
+    query = db.query(Report.id).filter(
+        Report.task_id == task.id, Report.report_type == report_type
+    )
     if version is None:
         query = query.filter(Report.is_current.is_(True))
     else:
@@ -224,8 +342,21 @@ def _hydrate_report_snapshot(
     is_dirty = False
 
     normalized_dimensions = _normalized_dimensions(report_data)
-    if normalized_dimensions is not None and report_data.get("dimensions") != normalized_dimensions:
+    if (
+        normalized_dimensions is not None
+        and report_data.get("dimensions") != normalized_dimensions
+    ):
         report_data["dimensions"] = normalized_dimensions
+        is_dirty = True
+
+    normalized_precheck = _normalized_precheck_result(
+        report_data.get("precheck_result"), task
+    )
+    if (
+        normalized_precheck is not None
+        and report_data.get("precheck_result") != normalized_precheck
+    ):
+        report_data["precheck_result"] = normalized_precheck
         is_dirty = True
 
     if "evaluation_config" in report_data:
@@ -242,8 +373,11 @@ def _hydrate_report_snapshot(
         if report_data.get("precheck_status") != paper_record.precheck_status:
             report_data["precheck_status"] = paper_record.precheck_status
             is_dirty = True
-        if report_data.get("precheck_result") != paper_record.precheck_result:
-            report_data["precheck_result"] = paper_record.precheck_result
+        normalized_paper_precheck = _normalized_precheck_result(
+            paper_record.precheck_result, task
+        )
+        if report_data.get("precheck_result") != normalized_paper_precheck:
+            report_data["precheck_result"] = normalized_paper_precheck
             is_dirty = True
 
         if paper_record.precheck_status == "reject":
@@ -266,22 +400,34 @@ def _hydrate_report_snapshot(
                 is_dirty = True
         else:
             normalized_radar = _normalized_radar_chart(report_data)
-            if normalized_radar is not None and report_data.get("radar_chart") != normalized_radar:
+            if (
+                normalized_radar is not None
+                and report_data.get("radar_chart") != normalized_radar
+            ):
                 report_data["radar_chart"] = normalized_radar
                 is_dirty = True
     else:
         normalized_radar = _normalized_radar_chart(report_data)
-        if normalized_radar is not None and report_data.get("radar_chart") != normalized_radar:
+        if (
+            normalized_radar is not None
+            and report_data.get("radar_chart") != normalized_radar
+        ):
             report_data["radar_chart"] = normalized_radar
             is_dirty = True
 
     if report.report_type == "public":
-        expected_public = _build_expected_public_report_data(db, task.id, report.version)
+        expected_public = _build_expected_public_report_data(
+            db, task.id, report.version
+        )
         if expected_public is not None and report_data != expected_public:
             report_data = expected_public
             is_dirty = True
-        if report.weighted_total != float(report_data.get("weighted_total", report.weighted_total)):
-            report.weighted_total = float(report_data.get("weighted_total", report.weighted_total))
+        if report.weighted_total != float(
+            report_data.get("weighted_total", report.weighted_total)
+        ):
+            report.weighted_total = float(
+                report_data.get("weighted_total", report.weighted_total)
+            )
             is_dirty = True
 
     if is_dirty:
@@ -305,7 +451,9 @@ def get_public_report(
     try:
         report = get_report_by_version(db, task.id, "public", version)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     return _hydrate_report_snapshot(db, task, report, paper)
 
 
@@ -322,7 +470,9 @@ def get_internal_report(
     try:
         report = get_report_by_version(db, task.id, "internal", version)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     report_data = _hydrate_report_snapshot(db, task, report)
     record_audit_log(
         db,
@@ -365,9 +515,7 @@ def get_report_history(
                 available_export_formats=["json", "pdf"],
             )
         )
-    return ReportHistoryResponse(
-        items=items
-    )
+    return ReportHistoryResponse(items=items)
 
 
 @router.get("/{paper_id}/report/export")
@@ -389,7 +537,9 @@ def export_report(
     try:
         report = get_report_by_version(db, task.id, report_type, version)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     _hydrate_report_snapshot(db, task, report)
     if format == "json":
         content = export_report_json(report)

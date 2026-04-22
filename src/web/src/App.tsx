@@ -117,6 +117,9 @@ function formatSubmitterStatusLabel({
   ) {
     return "需重新上传";
   }
+  if (isPrecheckFlagged(precheckStatus) && taskStatus === "completed") {
+    return "待人工复核";
+  }
 
   const status = taskStatus ?? paperStatus;
   if (status === "processing" || status === "running" || status === "reviewing") {
@@ -170,6 +173,10 @@ function isPrecheckRejected(precheckStatus?: string | null): boolean {
   return precheckStatus === "reject";
 }
 
+function isPrecheckFlagged(precheckStatus?: string | null): boolean {
+  return precheckStatus === "conditional_pass";
+}
+
 function formatWeightedTotalDisplay(
   weightedTotal?: number | null,
   precheckStatus?: string | null
@@ -186,6 +193,16 @@ function formatWeightedTotalDisplay(
 function summarizeConfidence(status: PaperStatus | null): string {
   if (isPrecheckRejected(status?.precheck_status)) {
     return "预检未通过";
+  }
+  if (isPrecheckFlagged(status?.precheck_status)) {
+    const reliability = status?.reliability_summary;
+    if (!reliability) {
+      return "带风险通过，待人工复核";
+    }
+    if (reliability.low_confidence_count > 0) {
+      return `预检带风险，另有 ${reliability.low_confidence_count} 个维度待复核`;
+    }
+    return "带风险通过，待人工复核";
   }
   const reliability = status?.reliability_summary;
   if (!reliability) {
@@ -711,6 +728,36 @@ function PrecheckRejectedSummary({ report }: { report: ReportSnapshot }) {
       {recommendation ? (
         <p className="notice info">建议：{recommendation}</p>
       ) : null}
+    </section>
+  );
+}
+
+function PrecheckFlaggedSummary({ report }: { report: ReportSnapshot }) {
+  const issues = report.precheck_result?.consensus?.issues ?? report.precheck_result?.issues ?? [];
+  const recommendation =
+    report.precheck_result?.consensus?.recommendation ?? report.precheck_result?.recommendation;
+  const reviewFlags =
+    report.precheck_result?.consensus?.review_flags ?? report.precheck_result?.review_flags ?? [];
+
+  return (
+    <section className="precheck-summary">
+      <div className="precheck-summary-header">
+        <p className="eyebrow">质量门禁</p>
+        <h4>带风险进入评分</h4>
+      </div>
+      <p className="muted">该稿件已完成六维评分，但预检检测到需要人工复核的风险项。</p>
+      <p className="notice info">建议结合下列问题和模型评分结果进行专家复核。</p>
+      {issues.length > 0 ? (
+        <ul className="list">
+          {issues.map((issue) => (
+            <li key={issue}>{issue}</li>
+          ))}
+        </ul>
+      ) : null}
+      {reviewFlags.length > 0 ? (
+        <p className="notice info">复核标记：{reviewFlags.join("、")}</p>
+      ) : null}
+      {recommendation ? <p className="notice info">建议：{recommendation}</p> : null}
     </section>
   );
 }
@@ -1309,7 +1356,9 @@ function SubmitterDashboard() {
                     <strong>
                       {isPrecheckRejected(report.precheck_status)
                         ? "未进入维度评分"
-                        : formatRoundsLabel(report.evaluation_config?.evaluation_rounds ?? 1)}
+                        : isPrecheckFlagged(report.precheck_status)
+                          ? "已完成评分，待人工复核"
+                          : formatRoundsLabel(report.evaluation_config?.evaluation_rounds ?? 1)}
                     </strong>
                   </div>
                 </div>
@@ -1324,6 +1373,9 @@ function SubmitterDashboard() {
                   <PrecheckRejectedSummary report={report} />
                 ) : (
                   <>
+                    {isPrecheckFlagged(report.precheck_status) ? (
+                      <PrecheckFlaggedSummary report={report} />
+                    ) : null}
                     <ReportAiOverview report={report} />
                     <ReportRadarChart report={report} />
                     <div className="dimension-grid">
@@ -1561,6 +1613,9 @@ function EditorDashboard() {
               <PrecheckRejectedSummary report={report} />
             ) : (
               <>
+                {isPrecheckFlagged(report.precheck_status) ? (
+                  <PrecheckFlaggedSummary report={report} />
+                ) : null}
                 <ReportAiOverview report={report} />
                 <ReportRadarChart report={report} />
                 <div className="dimension-grid">
@@ -1807,15 +1862,18 @@ function ExpertDashboard() {
             </div>
             {report.precheck_status === "reject" ? (
               <PrecheckRejectedSummary report={report} />
-                ) : report.dimensions.length === 0 ? (
-                  <p className="empty-state">该内部报告暂无可复核维度。</p>
-                ) : (
-                  <>
-                    <ReportAiOverview report={report} />
-                    <ReportRadarChart report={report} />
-                    <div className="expert-dimension-grid">
-                      {report.dimensions.map((dimension) => (
-                        <article className="expert-dimension-card" key={dimension.key}>
+            ) : report.dimensions.length === 0 ? (
+              <p className="empty-state">该内部报告暂无可复核维度。</p>
+            ) : (
+              <>
+                {isPrecheckFlagged(report.precheck_status) ? (
+                  <PrecheckFlaggedSummary report={report} />
+                ) : null}
+                <ReportAiOverview report={report} />
+                <ReportRadarChart report={report} />
+                <div className="expert-dimension-grid">
+                  {report.dimensions.map((dimension) => (
+                    <article className="expert-dimension-card" key={dimension.key}>
                       <ResultDimensionCard dimension={dimension} />
                       <div className="stack expert-form-fields">
                         <label className="stack">

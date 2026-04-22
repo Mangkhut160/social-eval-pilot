@@ -1,9 +1,11 @@
 """Tests for precheck runtime adaptation and v2.3 fields."""
 from __future__ import annotations
 
-import pytest
-
-from src.evaluation.precheck import PrecheckResult
+from src.evaluation.precheck import (
+    PrecheckModelResult,
+    PrecheckResult,
+    aggregate_precheck_results,
+)
 from src.reporting.builder import TERMINAL_PRECHECK_STATUSES
 
 
@@ -83,9 +85,9 @@ class TestTerminalPrecheckStatuses:
         """'reject' should be a terminal precheck status."""
         assert "reject" in TERMINAL_PRECHECK_STATUSES
 
-    def test_manual_review_is_terminal_status(self):
-        """'manual_review' should be a terminal precheck status."""
-        assert "manual_review" in TERMINAL_PRECHECK_STATUSES
+    def test_manual_review_is_not_terminal_status(self):
+        """'manual_review' should NOT be a terminal precheck status anymore."""
+        assert "manual_review" not in TERMINAL_PRECHECK_STATUSES
 
     def test_pass_is_not_terminal_status(self):
         """'pass' should NOT be a terminal precheck status."""
@@ -96,24 +98,22 @@ class TestTerminalPrecheckStatuses:
         assert "conditional_pass" not in TERMINAL_PRECHECK_STATUSES
 
     def test_terminal_statuses_count(self):
-        """There should be exactly 2 terminal statuses."""
-        assert len(TERMINAL_PRECHECK_STATUSES) == 2
+        """There should be exactly 1 terminal status."""
+        assert len(TERMINAL_PRECHECK_STATUSES) == 1
 
 
 class TestPrecheckStatusFlow:
     """Tests for precheck status flow decisions."""
 
-    def test_manual_review_triggers_reviewing_state(self):
-        """manual_review status should trigger reviewing state."""
-        # This test documents the expected behavior
-        # The actual flow is tested via integration tests
+    def test_manual_review_is_soft_flag_for_aggregator(self):
+        """manual_review should be treated as soft flag, not hard stop."""
         precheck = PrecheckResult(
             status="manual_review",
             issues=["Requires expert judgment"],
             review_flags=["complex_methodology"],
         )
         assert precheck.status == "manual_review"
-        assert precheck.status in TERMINAL_PRECHECK_STATUSES
+        assert precheck.status not in TERMINAL_PRECHECK_STATUSES
 
     def test_reject_triggers_completed_state(self):
         """reject status should trigger completed state."""
@@ -144,3 +144,59 @@ class TestPrecheckStatusFlow:
         )
         assert precheck.status == "conditional_pass"
         assert precheck.status not in TERMINAL_PRECHECK_STATUSES
+
+
+class TestAggregatedPrecheckResult:
+    """Tests for multi-model precheck aggregation."""
+
+    def test_two_reject_votes_become_hard_reject(self):
+        result = aggregate_precheck_results(
+            [
+                PrecheckModelResult(model_name="model-a", status="reject", issues=["不可评"], review_flags=["ethics_risk"]),
+                PrecheckModelResult(model_name="model-b", status="reject", issues=["严重缺页"], review_flags=["writing_risk"]),
+                PrecheckModelResult(model_name="model-c", status="pass", issues=[]),
+            ]
+        )
+
+        assert result.status == "reject"
+        assert result.blocking_vote_count == 2
+        assert result.total_models == 3
+        assert result.decision_rule == "2_of_3_blocking_consensus"
+        assert len(result.per_model) == 3
+
+    def test_manual_review_and_conditional_pass_become_conditional_pass(self):
+        result = aggregate_precheck_results(
+            [
+                PrecheckModelResult(
+                    model_name="model-a",
+                    status="manual_review",
+                    issues=["需人工复核"],
+                    review_flags=["citation_risk"],
+                ),
+                PrecheckModelResult(model_name="model-b", status="pass", issues=[]),
+                PrecheckModelResult(
+                    model_name="model-c",
+                    status="conditional_pass",
+                    issues=["有轻微引注问题"],
+                    review_flags=["writing_risk"],
+                ),
+            ]
+        )
+
+        assert result.status == "conditional_pass"
+        assert result.blocking_vote_count == 0
+        assert sorted(result.review_flags) == ["citation_risk", "writing_risk"]
+        assert result.consensus["status"] == "conditional_pass"
+
+    def test_all_pass_stays_pass(self):
+        result = aggregate_precheck_results(
+            [
+                PrecheckModelResult(model_name="model-a", status="pass", issues=[]),
+                PrecheckModelResult(model_name="model-b", status="pass", issues=[]),
+                PrecheckModelResult(model_name="model-c", status="pass", issues=[]),
+            ]
+        )
+
+        assert result.status == "pass"
+        assert result.review_flags == ["none"]
+        assert result.consensus["status"] == "pass"

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -29,9 +28,9 @@ def _resolve_chart_font() -> FontProperties | None:
     return None
 
 
-def generate_radar_chart_base64(labels: list[str], values: list[float]) -> str:
+def generate_radar_chart_png(labels: list[str], values: list[float]) -> bytes:
     if not labels or not values:
-        return ""
+        return b""
 
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     values_cycle = values + values[:1]
@@ -49,4 +48,4 @@ def generate_radar_chart_base64(labels: list[str], values: list[float]) -> str:
     figure.tight_layout()
     figure.savefig(buffer, format="png", dpi=150)
     plt.close(figure)
-    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+    return buffer.getvalue()
