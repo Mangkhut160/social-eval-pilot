@@ -1,0 +1,247 @@
+topic: 法学六维评价框架合理性讨论 — Claude 补充与修正
+base_document: docs/discussion/law_eval_gpt.yaml
+date: 2026-03-27
+author: Claude
+nature: 基于 GPT 版本的交叉审视，标注同意、修正与补充
+
+# ============================================================
+# 第一部分：对 GPT 原文的态度标注
+# ============================================================
+
+review_of_gpt_document:
+
+  overall_judgment:
+    agree: true
+    comment: >
+      "大体合理，但更像价值维度集合"这个定位准确。
+      补充一点：六维框架的价值不仅是评价工具，也是一种"把隐性同行评议经验显性化"的尝试。
+      这种显性化本身有独立价值，即使精度有限。
+
+  strengths:
+    agree: true
+    addition: >
+      补充一条优势：六维框架提供了统一的结构化输出骨架，
+      使得不同模型、不同时间点的评价结果可以横向对比和纵向追踪，
+      这在传统同行评议中几乎不可能做到。
+
+  main_issues:
+    维度交叉:
+      agree: true
+      comment: >
+        问题创新性 vs 前瞻延展性、理论建构力 vs 逻辑严密性，
+        这两组交叉是最需要优先处理的。
+        建议在评分锚点设计中加入"区分性测试"：
+        如果一段证据同时被两个维度引用，prompt 应要求模型说明它在两个维度下的不同评价角度。
+
+    可操作性偏弱:
+      agree: true
+
+    学科特异性不足:
+      agree: true
+      strengthen: >
+        这个问题比 GPT 文档表述的更严重。法学论文的核心能力是"从规范到制度方案的推导"，
+        而不仅是"文献→理论→论证"的通用学术路径。
+        当前框架可能系统性高估"写得像好论文"的文本，低估"法学分析本身是否成立"的文本。
+        这不是个别维度的问题，而是框架整体的学科适配性问题。
+
+  recommended_position:
+    agree: true
+    comment: >
+      同意"保留六维、先重写边界"的短路径策略。
+      但应设定一个明确的验证节点：在首批真实论文测试后，
+      如果维度间相关系数持续 > 0.85，则必须启动维度重构。
+
+  dimension_assessment:
+    问题创新性:
+      agree: true
+    现状洞察度:
+      agree: true
+    理论建构力:
+      agree: true
+      addition: >
+        在法学配置中，"理论建构力"可以考虑重新定义为偏"规范-制度分析能力"方向，
+        而不是通用的理论框架搭建。这样既保留了维度名称，又提升了学科特异性。
+    逻辑严密性:
+      agree: true
+    学术共识度:
+      strongly_agree_rename: true
+      comment: >
+        改名为"学术对话度"不仅是字面修正，而是评价导向的根本调整。
+        "共识度"暗示越接近主流越好，会系统性惩罚挑战范式的论文。
+        法学中恰恰有大量有价值的工作是在挑战主流解释路径。
+        "对话度"强调的是"是否进入对话"，而非"是否达成一致"。
+    前瞻延展性:
+      agree: true
+
+  minimum_revision_path:
+    agree: true
+    addition:
+      - 为每对易混淆维度增加"区分性说明"，明确同一证据在不同维度下的不同评价角度
+
+  medium_revision_options:
+    agree: true
+    addition:
+      - 考虑在法学配置中将"理论建构力"内涵偏移为"规范-制度分析能力"
+      - 如果不新增维度，至少在"理论建构力"的法学版 rubric 中覆盖规范分析、法条解释、制度方案推导
+
+  ai_evaluation_method:
+    overall_principle:
+      agree: true
+    common_workflow:
+      agree: true
+    dimension_execution:
+      agree: true
+    prompt_design_principles:
+      agree: true
+      elevation_suggestion: >
+        这四条原则应从讨论文档提升为项目级开发约束，
+        写入 CLAUDE.md 或 docs/architecture/ 下的 ADR，
+        确保所有后续 prompt 开发遵循统一规范。
+    suggested_output_schema:
+      agree: true
+      addition:
+        - field: cross_dimension_note
+          description: >
+            当同一证据片段被多个维度引用时，说明该证据在本维度下的特定评价角度，
+            避免"同一段话撑起多个高分"的重复计分问题
+        - field: confidence_signals
+          description: >
+            列出影响该维度评分置信度的具体因素，
+            例如"证据充足但维度边界模糊"或"证据明确但与另一维度高度重叠"
+
+# ============================================================
+# 第二部分：GPT 文档未覆盖的补充
+# ============================================================
+
+claude_additions:
+
+  meta_framework:
+    title: 三个核心问题的递进关系
+    description: >
+      锚点问题、人机分工问题、古德哈特问题不是三个独立议题，
+      而是一条递进链：标准是什么（认识论）→ 谁来执行标准（治理论）→ 标准会不会被玩坏（博弈论）。
+      这个递进关系可以作为项目讨论文档的总纲。
+
+  anchor_mapping:
+    title: 三层锚与系统模块的对应关系
+    description: GPT 的三层锚（文本内锚、共同体锚、程序锚）可以直接映射到系统设计
+    mapping:
+      - anchor: 文本内锚
+        system_module: evidence_quotes 字段、证据抽取步骤
+        strength: 客观性最强，最适合 AI 执行
+      - anchor: 共同体锚
+        system_module: configs/frameworks/ 六维配置
+        strength: 需要领域专家参与定义和校准
+      - anchor: 程序锚
+        system_module: 多模型并发 + 标准差阈值 + 专家复核队列
+        strength: 不解决"评得准不准"，但解决"评得透不透明"
+    project_positioning: >
+      SocialEval 最不该承诺"客观评分"，最该承诺"受约束的评价程序"。
+      这是 GPT 文档的原话，Claude 完全同意，建议作为项目对外叙事的核心定位。
+
+  human_intervention_triggers:
+    title: 专家介入的四类触发条件
+    description: >
+      GPT 文档提出的分级介入机制比简单的"AI 初审 + 人工终审"更实用。
+      以下整理为可直接落地的触发规则。
+    triggers:
+      - type: 高置信度论文
+        condition: 多模型评分标准差 ≤ 5，各维度无异常
+        action: AI 提供完整初评，人工抽检（抽检率待定）
+      - type: 低置信度论文
+        condition: 多模型评分标准差 > 5
+        action: 人工重点介入，AI 初评仅作参考
+      - type: 高分高分歧论文
+        condition: 均值 ≥ 80 但标准差 > 8
+        action: 必须人工介入，不得仅凭均值放行
+      - type: 范式偏离型论文
+        condition: 多模型评分一致偏低，但某一维度显著高于其他维度
+        action: 必须人工介入，可能是范式创新被常规标准低估
+      - type: 异常一致型论文
+        condition: 所有维度评分高度一致（维度间标准差极低），且各模型分歧极小
+        action: 标记为古德哈特风险样本，人工抽检优先级提升
+        rationale: >
+          "处处踩中 rubric"的论文可能是在迎合评价系统，而非真正的高质量研究。
+          真实的优秀论文通常在不同维度上有自然的强弱差异。
+
+  goodhart_monitoring:
+    title: 系统级古德哈特效应监测
+    description: >
+      GPT 文档在单篇论文层面讨论了古德哈特风险，
+      以下补充系统级（跨论文、跨时间）的监测机制。
+    metrics:
+      - name: 评分分布熵
+        description: >
+          监测全局评分分布的信息熵变化。
+          如果熵持续下降（论文评分越来越聚集在某个模式上），
+          可能是古德哈特效应的系统级早期信号。
+        module: F4（可靠性验证层）
+        threshold: 待基线数据确定后设定
+
+      - name: 维度间相关性趋势
+        description: >
+          定期计算六维评分之间的相关系数矩阵。
+          如果维度间相关性随时间上升，说明作者可能在用同一套策略同时提升所有维度，
+          框架的区分能力正在退化。
+        module: F4（可靠性验证层）
+        alert_condition: 任意两维度相关系数持续 > 0.85
+
+      - name: 证据片段复用率
+        description: >
+          追踪同一篇论文中，同一证据片段被多个维度引用的比例。
+          如果复用率显著上升，可能是"证据投机"的信号——
+          作者在制造可以同时服务多个维度的"万能句子"。
+        module: F3 + F4
+
+    strategic_defense:
+      - name: 保留不可完全解释的人类判断权重
+        description: >
+          系统的最终决策函数不应完全透明到可以被精确模拟。
+          这不是说人的判断不需要解释，而是系统整体的"AI 分数 → 最终结论"映射
+          应保留人类介入的不确定性，使博弈论意义上的逆向工程不可能完全收敛。
+        rationale: >
+          如果作者知道"AI 给 85 分以上就一定通过"，系统就变成了一个可优化的目标函数。
+          保留人类判断的不确定性，是对抗古德哈特效应的策略性需要。
+
+      - name: 评价维度定期微调与加噪
+        description: >
+          不是大改框架，而是定期对维度描述的措辞、评分锚点的细节、prompt 的表述
+          进行小幅调整，避免形成稳定的"应试靶点"。
+        frequency: 建议每学期或每评审周期微调一次
+
+  law_discipline_gap:
+    title: 法学学科特异性维度缺口
+    description: >
+      当前六维更像通用学术论文评价框架。
+      法学论文的核心能力——从规范到制度方案的推导——没有被直接覆盖。
+    options:
+      - approach: 新增第七维度
+        name_candidate: 规范-制度分析能力
+        scope: 法条解释质量、规范推导逻辑、制度方案可行性
+        pros: 直接覆盖法学核心能力，不影响其他维度
+        cons: 维度数增加，复杂度上升
+
+      - approach: 重定义现有维度
+        target: 理论建构力（仅在法学配置中）
+        redefinition: 偏向"规范-制度分析能力"，覆盖法条解释、规范推导、制度设计
+        pros: 保持六维结构不变
+        cons: 同一维度名称在不同学科配置中含义差异大，可能造成混淆
+
+    recommendation: >
+      短期（v1）采用方案二：在法学配置中重定义"理论建构力"的内涵。
+      中期（v2）如果验证数据表明法学核心能力仍被低估，再考虑方案一。
+
+# ============================================================
+# 第三部分：综合结论
+# ============================================================
+
+combined_takeaway:
+  gpt_core_insight: >
+    六维框架可以作为"共同体锚"，但还不能直接当作"稳定量尺"。
+    当前最需要做的是把维度定义写得更清楚、更去重、更抗歧义。
+  claude_core_insight: >
+    除了维度定义本身，还需要在系统层面建立反古德哈特监测机制，
+    并在制度层面保留人类判断的不确定性，防止评价系统被逆向工程。
+  shared_conclusion: >
+    SocialEval 的价值不在于"AI 评得比人准"，
+    而在于建立一套让分歧可见、理由可查、偏差可纠正、操纵可检测的评价程序。

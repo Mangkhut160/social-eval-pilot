@@ -1,0 +1,368 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SocialEval Evaluation Framework Schema v3.0",
+  "description": "法学论文评价框架配置文件schema v3.0，支持六维度结构（无加分项）、准入条件、上限规则、枚举定义和治理附录",
+  "type": "object",
+  "required": ["metadata", "precheck", "scoring_structure", "dimensions", "evaluation_chain", "governance_appendix"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["name", "version", "discipline", "source", "created", "status"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "discipline": { "type": "string" },
+        "source": { "type": "string" },
+        "created": { "type": "string", "format": "date" },
+        "previous_version": { "type": "string" },
+        "status": { "type": "string", "enum": ["stable", "research", "deprecated"] },
+        "changelog": { "type": "string" }
+      }
+    },
+    "enums": {
+      "type": "object",
+      "description": "通用枚举定义",
+      "properties": {
+        "review_flags": {
+          "type": "object",
+          "properties": {
+            "common": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["key", "name_zh", "description", "action"],
+                "properties": {
+                  "key": { "type": "string" },
+                  "name_zh": { "type": "string" },
+                  "description": { "type": "string" },
+                  "action": { "type": "string" }
+                }
+              }
+            },
+            "dimension_specific": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["key", "name_zh", "description", "action"],
+                  "properties": {
+                    "key": { "type": "string" },
+                    "name_zh": { "type": "string" },
+                    "description": { "type": "string" },
+                    "action": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "precheck_status": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "name_zh", "description", "condition"],
+            "properties": {
+              "key": { "type": "string", "enum": ["pass", "conditional_pass", "manual_review"] },
+              "name_zh": { "type": "string" },
+              "description": { "type": "string" },
+              "condition": { "type": "string" },
+              "examples": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "precheck": {
+      "type": "object",
+      "description": "准入条件（前置筛选）",
+      "required": ["name", "description", "criteria", "prompt_template"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "name_zh", "description", "pass_required"],
+            "properties": {
+              "key": { "type": "string" },
+              "name_zh": { "type": "string" },
+              "description": { "type": "string" },
+              "pass_required": { "type": "boolean" },
+              "review_required": { "type": "boolean" },
+              "detection_methods": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "prompt_template": { "type": "string" }
+      }
+    },
+    "scoring_structure": {
+      "type": "object",
+      "description": "评分结构配置",
+      "required": ["total_max", "description"],
+      "properties": {
+        "total_max": { "type": "integer", "default": 100 },
+        "description": { "type": "string" },
+        "ceiling_rules_application": { "type": "string" }
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "description": "六维度评分",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["key", "name_zh", "name_en", "weight", "position", "position_name", "description", "evaluate", "do_not_evaluate", "ceiling_rules", "scoring_criteria", "prompt_template"],
+        "properties": {
+          "key": { "type": "string" },
+          "name_zh": { "type": "string" },
+          "name_en": { "type": "string" },
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 },
+          "position": { "type": "integer", "minimum": 1, "maximum": 6 },
+          "position_name": { "type": "string" },
+          "ai_difficulty": { "type": "string", "enum": ["low", "medium", "high"] },
+          "description": { "type": "string" },
+          "evaluate": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "do_not_evaluate": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "ceiling_rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["trigger", "score_ceiling", "priority"],
+              "properties": {
+                "trigger": { "type": "string" },
+                "score_ceiling": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "priority": { "type": "integer", "minimum": 1 },
+                "severity": { "type": "string", "enum": ["critical", "major", "minor"] },
+                "detection": { "type": "string" },
+                "examples": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
+          "scoring_criteria": {
+            "type": "object",
+            "required": ["excellent", "good", "marginal", "unacceptable"],
+            "properties": {
+              "excellent": {
+                "type": "object",
+                "required": ["range", "indicators"],
+                "properties": {
+                  "range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+                  "description": { "type": "string" },
+                  "indicators": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "good": {
+                "type": "object",
+                "required": ["range", "indicators"],
+                "properties": {
+                  "range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+                  "description": { "type": "string" },
+                  "indicators": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "marginal": {
+                "type": "object",
+                "required": ["range", "indicators"],
+                "properties": {
+                  "range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+                  "description": { "type": "string" },
+                  "indicators": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "unacceptable": {
+                "type": "object",
+                "required": ["range", "indicators"],
+                "properties": {
+                  "range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+                  "description": { "type": "string" },
+                  "indicators": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "boundary_notes": { "type": "string" },
+          "prompt_template": { "type": "string" }
+        }
+      }
+    },
+    "evaluation_chain": {
+      "type": "object",
+      "description": "判断链条顺序",
+      "required": ["description", "sequence"],
+      "properties": {
+        "description": { "type": "string" },
+        "sequence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["dimension", "reason"],
+            "properties": {
+              "dimension": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "governance_appendix": {
+      "type": "object",
+      "description": "治理附录（研究校准和系统治理，不直接进入单模型评分prompt）",
+      "required": ["note", "discrimination_threshold", "expert_review_triggers", "validation_plan", "reliability_verification"],
+      "properties": {
+        "note": { "type": "string" },
+        "discrimination_threshold": {
+          "type": "object",
+          "required": ["description", "levels"],
+          "properties": {
+            "description": { "type": "string" },
+            "levels": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["level", "threshold", "action"],
+                "properties": {
+                  "level": { "type": "string" },
+                  "threshold": { "type": "integer" },
+                  "action": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "expert_review_triggers": {
+          "type": "object",
+          "required": ["dimension_triggers", "overall_triggers"],
+          "properties": {
+            "dimension_triggers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["dimension", "condition"],
+                "properties": {
+                  "dimension": { "type": "string" },
+                  "condition": { "type": "string" }
+                }
+              }
+            },
+            "overall_triggers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["condition", "action"],
+                "properties": {
+                  "condition": { "type": "string" },
+                  "action": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "cross_dimension_consistency": {
+          "type": "object",
+          "required": ["description", "rules"],
+          "properties": {
+            "description": { "type": "string" },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["condition", "flag", "reason", "action"],
+                "properties": {
+                  "condition": { "type": "string" },
+                  "flag": { "type": "string" },
+                  "reason": { "type": "string" },
+                  "action": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "validation_plan": {
+          "type": "object",
+          "required": ["description", "steps"],
+          "properties": {
+            "description": { "type": "string" },
+            "steps": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "reliability_verification": {
+          "type": "object",
+          "required": ["multi_model_consensus", "system_risks"],
+          "properties": {
+            "multi_model_consensus": {
+              "type": "object",
+              "required": ["recommended_models", "max_models", "thresholds"],
+              "properties": {
+                "recommended_models": { "type": "integer" },
+                "max_models": { "type": "integer" },
+                "thresholds": {
+                  "type": "object",
+                  "properties": {
+                    "high_confidence": { "type": "string" },
+                    "medium_confidence": { "type": "string" },
+                    "low_confidence": { "type": "string" }
+                  }
+                }
+              }
+            },
+            "system_risks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["risk", "description", "detection", "threshold", "action"],
+                "properties": {
+                  "risk": { "type": "string" },
+                  "description": { "type": "string" },
+                  "detection": { "type": "string" },
+                  "threshold": { "type": "number" },
+                  "action": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "sample_anchors": {
+          "type": "object",
+          "properties": {
+            "note": { "type": "string" },
+            "positive": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["paper", "type", "source"],
+                "properties": {
+                  "paper": { "type": "string" },
+                  "type": { "type": "string" },
+                  "source": { "type": "string" }
+                }
+              }
+            },
+            "negative": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["paper", "type", "reason"],
+                "properties": {
+                  "paper": { "type": "string" },
+                  "type": { "type": "string" },
+                  "reason": { "type": "string" }
+                }
+              }
+            },
+            "notes": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

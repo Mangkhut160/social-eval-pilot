@@ -1,0 +1,225 @@
+topic: 法学六维评价框架合理性讨论
+target_framework: configs/frameworks/law_v1.yaml
+document_version: version2
+date: 2026-03-27
+author: GPT
+
+overall_judgment:
+  conclusion: 大体合理，但更像价值维度集合，尚未达到稳定可操作的评分维度标准
+  summary:
+    - 作为法学论文评价的共同体锚，方向正确
+    - 作为 AI 直接执行的评分 rubric，边界仍不够清晰
+    - 主要问题不在是否保留六维，而在维度之间交叉较多、定义抗歧义性不足
+
+strengths:
+  - 覆盖了法学论文评价中的核心关注点：问题意识、文献掌握、理论能力、论证质量、共同体对话、未来潜力
+  - 与项目当前六维设计保持一致，适合作为默认框架的起点
+  - 便于组织解释性输出和雷达图展示
+
+main_issues:
+  - type: 维度交叉
+    details:
+      - 问题创新性 与 前瞻延展性 容易相互污染
+      - 理论建构力 与 逻辑严密性 容易基于同一证据重复评分
+    impact: 模型可能对不同维度打出高度相近的分数，削弱维度区分度
+
+  - type: 可操作性偏弱
+    details:
+      - 学术共识度 容易被误解为越接近主流越高分
+      - 前瞻延展性 包含较强推测性，证据锚较弱
+    impact: 维度判断容易漂移，不利于多模型获得稳定一致的评分
+
+  - type: 学科特异性不足
+    details:
+      - 当前框架强调文献、理论、逻辑
+      - 对法学论文中常见的规范分析、法条解释、案例适用、制度方案可行性覆盖不足
+    impact: 可能高估“写得像论文”的文本，而低估法学分析本身是否成立
+
+recommended_position:
+  keep_six_dimensions: true
+  rationale:
+    - 不建议立即推翻六维框架
+    - 更短路径是保留现有六维名称，先重写每一维的边界说明和评分锚点
+    - 在验证阶段再决定是否替换个别维度名称
+
+dimension_assessment:
+  - name: 问题创新性
+    judgment: 合理
+    risk: 容易与前瞻延展性重叠
+    suggested_boundary: 只看问题是否新、是否重要，不看解决方案是否成熟
+
+  - name: 现状洞察度
+    judgment: 合理
+    risk: 若只看引用数量，会被表面文献堆砌误导
+    suggested_boundary: 只看文献掌握、争点归纳与批判质量，不看单纯引用密度
+
+  - name: 理论建构力
+    judgment: 合理
+    risk: 容易与逻辑严密性混淆
+    suggested_boundary: 只看概念界定、框架搭建、自洽性，不看具体推理链长短
+
+  - name: 逻辑严密性
+    judgment: 合理
+    risk: 容易与理论建构力基于同一证据重复评分
+    suggested_boundary: 只看论证链、推理有效性、反例回应，不看理论框架是否宏大
+
+  - name: 学术共识度
+    judgment: 名称风险较高
+    risk: 容易滑向“越主流越高分”的保守评价
+    suggested_boundary: 应理解为是否准确识别并回应共同体中的核心争议，而不是是否服从主流观点
+    rename_candidate: 学术对话度
+
+  - name: 前瞻延展性
+    judgment: 有保留价值
+    risk: 预测性强，最难稳定打分
+    suggested_boundary: 只看议题外溢能力与后续研究/制度启发，不奖励空泛拔高
+
+minimum_revision_path:
+  - 保留六维名称
+  - 为每个维度补充“只评什么、不评什么”
+  - 为每个维度增加正反例
+  - 为每个维度设计更细的评分锚点，降低模型自由解释空间
+
+medium_revision_options:
+  - 将 学术共识度 调整为 学术对话度
+  - 增补或替换为 更贴合法学学科性的维度，例如 规范分析有效性
+  - 在后续版本中考虑增加 制度回应能力 作为候选维度
+
+final_takeaway: >
+  这六个维度可以作为“共同体锚”，但还不能直接当作“稳定量尺”。
+  当前最需要做的不是立即推翻框架，而是把维度定义写得更清楚、更去重、更抗歧义。
+
+ai_evaluation_method:
+  overall_principle:
+    conclusion: 这六个维度可以由 AI 辅助评价，但不能让 AI 凭整体印象直接打分
+    core_method:
+      - 按维度拆解任务
+      - 先抽取证据，再做判断
+      - 输出结构化结果，而不是只输出分数
+      - 使用多模型并发约束主观漂移
+      - 对边界案例交由人工复核
+
+  common_workflow:
+    - step: 证据抽取
+      description: 针对单一维度，从论文中抽取相关原文片段，而不是先给分
+    - step: 维度判断
+      description: 基于已抽取证据，按照该维度专属规则判断强弱
+    - step: 结构化输出
+      description: 输出 score、evidence_quotes、analysis、uncertainty 等字段
+    - step: 多模型交叉
+      description: 同一维度由多个模型独立评分，比较均值与标准差
+    - step: 人工介入
+      description: 对分歧大、证据弱、边界模糊的样本进入专家复核
+
+  dimension_execution:
+    - name: 问题创新性
+      ai_should_identify:
+        - 论文提出的核心问题是什么
+        - 该问题是否与既有研究明显不同
+        - 作者是否明确说明研究空白或新切口
+      evidence_sources:
+        - 摘要
+        - 引言
+        - 问题提出部分
+      risks:
+        - 容易把换一种表述误判成创新
+        - 若只看作者自述，可能高估创新性
+      control_points:
+        - 需要交叉参考文献综述部分
+        - 不因自我宣称“首次提出”而直接给高分
+
+    - name: 现状洞察度
+      ai_should_identify:
+        - 是否系统梳理既有文献或主要争论
+        - 是否准确区分主要观点流派
+        - 是否有批判性分析而非简单罗列
+      evidence_sources:
+        - 文献综述
+        - 参考文献列表
+        - 学术争议归纳段落
+      risks:
+        - 容易把引用很多误判为洞察很深
+      control_points:
+        - prompt 中应明确禁止用引用数量替代评价质量
+
+    - name: 理论建构力
+      ai_should_identify:
+        - 是否提出清晰概念、命题或分析框架
+        - 框架内部是否自洽
+        - 是否不是对既有观点的机械拼贴
+      evidence_sources:
+        - 概念界定部分
+        - 理论框架章节
+        - 整体分析结构
+      risks:
+        - 容易与逻辑严密性混淆
+      control_points:
+        - 这里只看框架有没有搭起来，不看每一步推理是否无漏洞
+
+    - name: 逻辑严密性
+      ai_should_identify:
+        - 论点到论据是否连贯
+        - 是否存在跳步推理、偷换概念、自我矛盾
+        - 是否回应关键反对意见
+      evidence_sources:
+        - 主体论证部分
+        - 反驳段落
+        - 结论与前文衔接关系
+      risks:
+        - 容易被语言流畅性误导
+      control_points:
+        - 必须指出具体推理链，而不能只给笼统判断
+
+    - name: 学术共识度
+      recommended_interpretation: 更适合作为学术对话度来执行
+      ai_should_identify:
+        - 作者是否知道自己在回应谁
+        - 是否准确描述主流与反对立场
+        - 是否真正进入共同体争论，而不是自说自话
+      evidence_sources:
+        - 文献综述
+        - 与既有观点对话的段落
+        - 明确定位自身立场的句子
+      risks:
+        - 最容易被误评成越接近主流越高分
+      control_points:
+        - prompt 必须写清楚，评价的是对话质量，而不是立场顺从度
+
+    - name: 前瞻延展性
+      ai_should_identify:
+        - 研究是否打开新议题
+        - 是否对制度、解释路径或后续研究有延展价值
+        - 这种延展是否建立在正文论证之上
+      evidence_sources:
+        - 结论部分
+        - 未来研究或制度影响讨论
+        - 可迁移的新框架或新问题设置
+      risks:
+        - 容易被空泛拔高骗分
+      control_points:
+        - 只依据正文中已有论证，不接受口号式展望
+
+  prompt_design_principles:
+    - 每个维度单独使用 prompt，不共用一个总 prompt
+    - 每个维度单独抽取证据、单独评分、单独解释
+    - prompt 中要写明“只评什么、不评什么”
+    - prompt 中要限制模型不得用语言流畅、篇幅充足替代实质判断
+
+  suggested_output_schema:
+    dimension: logical_coherence
+    score: 78
+    evidence_quotes:
+      - 原文引用1
+    analysis: 分析说明
+    strengths:
+      - 优势点1
+    weaknesses:
+      - 弱点1
+    uncertainty: low
+
+  implementation_takeaway:
+    summary: >
+      这六个维度可以用 AI 评，但必须采用“按维度拆解任务、用证据驱动评分、
+      用多模型约束漂移、用人工处理边界案例”的方式。
+    warning: >
+      如果让 AI 通读全文后直接给六个分，结果会不稳定，也难以审计。

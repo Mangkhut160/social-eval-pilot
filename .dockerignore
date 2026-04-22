@@ -1,0 +1,13 @@
+.git
+.gitignore
+.pytest_cache
+.venv
+__pycache__/
+*.pyc
+data/
+docs/presentations/
+research/
+sample/
+src/web/node_modules/
+src/web/dist/
+tests/

@@ -1,0 +1,16 @@
+[Unit]
+Description=SocialEval FastAPI service
+After=network.target
+
+[Service]
+Type=simple
+User=socialeval
+Group=socialeval
+WorkingDirectory=/opt/social-eval
+EnvironmentFile=-/etc/socialeval/socialeval.env
+ExecStart=/usr/bin/env bash -lc 'cd /opt/social-eval && uv run uvicorn src.api.main:app --host 127.0.0.1 --port 8000'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

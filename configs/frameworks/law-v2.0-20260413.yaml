@@ -1,0 +1,486 @@
+# 法学论文评价框架 v2.0
+# 基于 PPT 六维讨论结果调整：六维度 + 准入条件
+
+metadata:
+  name: "法学评价框架 v2.0"
+  version: "2.0.0"
+  discipline: "法学"
+  source: "黄宇骁《法学论文的人工评价逻辑》PPT + 讨论调整"
+  created: "2026-04-13"
+  changelog: |
+    v2.0 变化：
+    - 理论建构力 → 分析框架建构力（涵盖多元论文类型）
+    - 学术共识度 → 结论共识度（更精准定义）
+    - 新增准入条件：学术规范性（不合格即退稿）
+    - 权重调整：问题创新性30% + 逻辑严密性25%（双核心），前瞻延展性5%（权重最低）
+    - 保持六维结构，总分100（符合学术惯例）
+
+std_threshold: 5.0
+
+# 准入条件（前置筛选）
+precheck:
+  name: "学术规范性准入检查"
+  description: "不合格即退稿，不进入五维评分"
+  criteria:
+    - key: writing_norm
+      name_zh: "写作规范性"
+      description: "语言表达清晰、结构完整"
+      pass_required: true
+    - key: citation_norm
+      name_zh: "引用规范性"
+      description: "格式符合学术规范、引用准确无捏造"
+      pass_required: true
+    - key: academic_ethics
+      name_zh: "学术伦理"
+      description: "无抄袭、无数据造假"
+      pass_required: true
+  prompt_template: |
+    请对这篇法学论文进行【学术规范性准入检查】。
+
+    先判断论文是否属于本系统可评测范围：
+    1. 如果论文主题明显属于理工农医等非文科领域，应直接判定为 reject。
+    2. 如果论文属于法学、人文社科或交叉文科议题，则继续做基本规范性检查。
+
+    基本规范性检查：
+    1. 写作规范性：语言表达是否基本清晰？结构是否基本完整、可阅读？
+    2. 引用规范性：引用是否基本可信、无明显捏造或严重失真？
+    3. 学术伦理：是否存在明显抄袭嫌疑、数据造假或学术不端？
+
+    放宽要求：
+    - 不要因为参考文献格式、脚注样式、图表编号等细节不够标准就直接退稿。
+    - 只要不是特别离谱的格式问题，且不影响基本理解与学术判断，应优先判定为 pass。
+    - 仅当论文明显不属于文科范围，或存在严重失范、严重残缺、明显学术不端时，才判定为 reject。
+
+    评分标准：
+    - pass：属于文科范围，且符合基本规范，可进入后续评分
+    - reject：存在严重问题，建议退稿
+
+    请输出：
+    {"status": "pass|reject", "issues": ["问题列表"], "recommendation": "处理建议"}
+
+# 评分结构
+scoring_structure:
+  total_max: 100
+  description: "六维度评分，总分100（符合学术惯例）"
+
+# 六维度定义
+dimensions:
+  # 维度1：问题创新性（权重30%）
+  - key: problem_originality
+    name_zh: 问题创新性
+    name_en: Problem Originality
+    weight: 0.30
+    position: 1
+    position_name: "起点"
+    ai_difficulty: "high"
+    needs_expert_review: true
+    expert_review_trigger: "<40分或置信度低"
+    description: |
+      研究问题是否为"真问题"且具有枢纽意义。
+      好论文解决的不是"大家不知道的问题"，而是"大家没意识到这是个问题"。
+      起点溃散则全盘失败。
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        description: "枢纽性问题"
+        indicators:
+          - "问题落在学科/制度的枢纽处，牵一发而动全身"
+          - "激活学科核心争论，连接多个子领域"
+          - "将'技术条款'提升为学术问题"
+      good:
+        range: [60, 79]
+        description: "有价值的创新"
+        indicators:
+          - "问题具有推进意义，触及领域前沿"
+          - "是已知问题的延伸或细化，有新角度"
+      marginal:
+        range: [40, 59]
+        description: "问题界定存疑"
+        indicators:
+          - "问题界定不够清晰，价值存疑"
+          - "现象描述多于问题提炼"
+      unacceptable:
+        range: [0, 39]
+        description: "起点溃散"
+        indicators:
+          - "虚假的问题意识"
+          - "拼凑式选题（热点词汇机械组合）"
+          - "宏大叙事无聚焦"
+    positive_anchor:
+      paper: "林来梵《民法典编纂的宪法学透析》"
+      score: 90
+      evidence: "将'根据宪法，制定本法'从技术条款提升为宪法学问题"
+    negative_anchor:
+      paper: "《论新质生产力区域协调发展的法治化之道》"
+      score: 20
+      evidence: "追热点式选题，问题本身虚构"
+    prompt_template: |
+      请对这篇法学论文的【问题创新性】进行评分（0-100分）。
+
+      评价要点：
+      1. 问题是否为"真问题"？（不是虚构问题）
+      2. 问题是否具有枢纽性？（牵一发而动全身）
+      3. 问题边界是否清晰？（不做宏大叙事）
+      4. 是否是"大家没意识到这是个问题"却被提出了？
+
+      评分参考：
+      - 90分示例：林来梵将"根据宪法"从技术条款提升为宪法学问题
+      - 20分示例：追热点式选题，热点词汇机械组合
+
+      请输出JSON：
+      {"dimension": "problem_originality", "score": <0-100整数>, "evidence_quotes": ["引用"], "analysis": "分析"}
+
+  # 维度2：现状洞察度（权重15%）
+  - key: literature_insight
+    name_zh: 现状洞察度
+    name_en: Literature Insight
+    weight: 0.15
+    position: 2
+    position_name: "定位"
+    ai_difficulty: "medium"
+    needs_expert_review: false
+    description: |
+      对既有研究的穷尽程度与未竟点的精准识别。
+      到达点穷尽 + 未竟点精准 = 使问题"不可回避"。
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "穷尽核心文献，精准定位缺口"
+          - "使问题'不可回避'"
+      good:
+        range: [60, 79]
+        indicators:
+          - "文献覆盖充分，缺口识别较准确"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "文献综述形式化，仅罗列'谁说了什么'"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "文献罗列无分析，引用与论证脱节"
+    positive_anchor:
+      paper: "章志远《迈向公私合作型行政法》"
+      score: 85
+      evidence: "将公私合作置于社会转型与治理多元化大背景"
+    negative_anchor:
+      paper: "《对外援助立法论纲》"
+      score: 15
+      evidence: "文献梳理流于形式，无真正的问题意识"
+    prompt_template: |
+      请对这篇法学论文的【现状洞察度】进行评分（0-100分）。
+
+      评价要点：
+      1. 文献综述是否穷尽核心文献？
+      2. 是否精准概括既有研究的主线争论？
+      3. 是否清楚说明"学界走到了哪里，缺口在哪"？
+
+      请输出JSON：
+      {"dimension": "literature_insight", "score": <0-100整数>, "evidence_quotes": ["引用"], "analysis": "分析"}
+
+  # 维度3：分析框架建构力（权重15%）
+  # 注意：原"理论建构力"调整为"分析框架建构力"
+  - key: analytical_framework
+    name_zh: 分析框架建构力
+    name_en: Analytical Framework Construction
+    weight: 0.15
+    position: 3
+    position_name: "工具"
+    ai_difficulty: "medium"
+    needs_expert_review: false
+    description: |
+      是否建立可操作的分析框架（理论建模/类型化/比较框架/实证设计）。
+      涵盖多元论文类型：
+      - 法教义学论文：类型化建模
+      - 判例分析论文：裁判逻辑提炼框架
+      - 实证研究论文：研究设计与方法论框架
+      - 比较法论文：跨国比较分析框架
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "建立可操作的类型化模型或分析框架"
+          - "框架真正嵌入论证，具有分析功能"
+      good:
+        range: [60, 79]
+        indicators:
+          - "有类型化尝试，具有一定操作性"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "类型化形式化，对论证无实质帮助"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "理论'贴标签'，与论证脱节"
+          - "概念混乱，前后使用不一致"
+    positive_anchor:
+      paper: "蒋红珍《比例原则位阶秩序的司法适用》"
+      score: 90
+      evidence: "提出'全阶式/截取式/抽象式'三种比例原则适用模型"
+    negative_anchor:
+      paper: "《行政机关采集人脸信息活动的法治因应》"
+      score: 10
+      evidence: "概念混乱，理论仅为装饰"
+    prompt_template: |
+      请对这篇法学论文的【分析框架建构力】进行评分（0-100分）。
+
+      评价要点：
+      1. 是否提出类型化框架或分析框架？
+      2. 框架是否覆盖核心现象？
+      3. 框架是否具有分析功能？是否服务于论证？
+      4. 论文类型适配：
+         - 法教义学：类型化建模质量
+         - 判例分析：裁判逻辑提炼框架
+         - 实证研究：研究设计与方法论
+         - 比较法：跨国比较框架
+
+      请输出JSON：
+      {"dimension": "analytical_framework", "score": <0-100整数>, "evidence_quotes": ["引用"], "analysis": "分析"}
+
+  # 维度4：逻辑严密性（权重25%）
+  - key: logical_coherence
+    name_zh: 逻辑严密性
+    name_en: Logical Coherence
+    weight: 0.25
+    position: 4
+    position_name: "骨架"
+    ai_difficulty: "low"
+    needs_expert_review: false
+    description: |
+      推理链条是否不可颠倒。
+      后一步是对前一步问题的必然回应。
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "推理链条完整，每一步都是必然回应"
+          - "顺序不可颠倒"
+      good:
+        range: [60, 79]
+        indicators:
+          - "论证较完整，有少量可优化处"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "论证浅表化，各部分独立成章缺乏呼应"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "逻辑断裂，结论突兀"
+          - "段落可随意重组，不影响内容理解"
+    positive_anchor:
+      paper: "蒋红珍《比例原则位阶秩序的司法适用》"
+      score: 85
+      evidence: "位阶秩序不被遵守 → 才需要类型化 → 三种模型 → 司法如何选择"
+    negative_anchor:
+      paper: "差论文典型"
+      score: 15
+      evidence: "段落可随意重组，前后无因果关联"
+    prompt_template: |
+      请对这篇法学论文的【逻辑严密性】进行评分（0-100分）。
+
+      评价要点：
+      1. 论证链条是否完整？每一步是否必然回应？
+      2. 逻辑顺序是否可颠倒？（测试：删除某部分论证是否断裂）
+      3. 是否有论证飞跃？（直接跳到结论）
+
+      请输出JSON：
+      {"dimension": "logical_coherence", "score": <0-100整数>, "evidence_quotes": ["引用"], "analysis": "分析"}
+
+  # 维度5：结论共识度（权重15%）
+  # 注意：原"学术共识度"调整为"结论共识度"
+  - key: conclusion_consensus
+    name_zh: 结论共识度
+    name_en: Conclusion Consensus
+    weight: 0.10
+    position: 5
+    position_name: "落脚"
+    ai_difficulty: "high"
+    needs_expert_review: true
+    expert_review_trigger: "<50分或多模型分歧大"
+    description: |
+      对策/结论在制度框架内的可行性。
+      "在司法现实中说得通"、"不会把体系搞崩"。
+    scoring_criteria:
+      excellent:
+        range: [80, 100]
+        indicators:
+          - "与司法实践对话，符合学界核心共识"
+          - "'在司法现实中说得通'"
+      good:
+        range: [60, 79]
+        indicators:
+          - "考虑实践对接，有判例或实务支撑"
+      marginal:
+        range: [40, 59]
+        indicators:
+          - "对策建议泛化，与实践脱节"
+      unacceptable:
+        range: [0, 39]
+        indicators:
+          - "对策'万能药'化，脱离制度语境"
+          - "直接移植外国制度，不考虑本土适配"
+    positive_anchor:
+      paper: "蒋红珍《比例原则位阶秩序的司法适用》"
+      score: 80
+      evidence: "通过判例与审查强度讨论，观察法院介入力度"
+    negative_anchor:
+      paper: "《论新质生产力区域协调发展的法治化之道》"
+      score: 10
+      evidence: "对策建议'万能药'化"
+    prompt_template: |
+      请对这篇法学论文的【结论共识度】进行评分（0-100分）。
+
+      评价要点：
+      1. 对策/结论是否与司法实践对话？
+      2. 是否在中国语境中"说得通"？
+      3. 对策是否具体可行？（而非"万能药"）
+      4. 是否会"把体系搞崩"？
+
+      请输出JSON：
+      {"dimension": "conclusion_consensus", "score": <0-100整数>, "evidence_quotes": ["引用"], "analysis": "分析"}
+
+  # 维度6：前瞻延展性（权重5%）
+  - key: forward_extension
+    name_zh: 前瞻延展性
+    name_en: Forward Extension
+    weight: 0.05
+    position: 6
+    position_name: "开放"
+    ai_difficulty: "low"
+    needs_expert_review: false
+    description: |
+      研究成果是否具备溢出效应？
+      能否为跨学科交流或未来更深度的研究提供延展接口？
+      好论文往往不终结争论，而是画出后续研究的地图。
+      注：判例分析、实务指南类论文在此维度得分可能较低，但权重仅5%，对总分影响小。
+    scoring_criteria:
+      excellent:
+        range: [90, 100]
+        description: "显著溢出效应"
+        indicators:
+          - "明确后续研究路径"
+          - "具有跨学科延展潜力"
+          - "'如果你不同意，你该从哪里反驳'有答案"
+      good:
+        range: [80, 89]
+        description: "有后续指向"
+        indicators:
+          - "有后续研究指向"
+          - "重置讨论方式而非封闭结论"
+      acceptable:
+        range: [70, 79]
+        description: "较开放但模糊"
+        indicators:
+          - "结论较开放，但后续指向模糊"
+          - "未明确具体起点"
+      marginal:
+        range: [60, 69]
+        description: "结论封闭性弱"
+        indicators:
+          - "结论封闭性弱"
+          - "无主动指出后续可推进方向"
+      unacceptable:
+        range: [0, 59]
+        description: "自封终结争论"
+        indicators:
+          - "自封'终结争论'"
+          - "无后续接口"
+          - "'本文已充分论证...'"
+    positive_anchor:
+      paper: "林来梵《民法典编纂的宪法学透析》"
+      score: 90
+      evidence: "提出'合宪性解释基准条款'，指明后续立法/解释路径——如果你不同意，你该从哪里反驳？论文给出了明确的起点"
+    negative_anchor:
+      paper: "差论文典型"
+      score: 20
+      evidence: "封闭性结论：'本文已充分论证...'，无后续空间"
+    prompt_template: |
+      请对这篇法学论文的【前瞻延展性】进行评分（0-100分）。
+
+      说明：判例分析、实务指南类论文在此维度得分可能较低，但权重仅5%，对总分影响小。
+
+      评价要点：
+      1. 是否为后续研究留有接口？
+      2. 是否明确指出后续研究的起点？
+      3. 论文是否开放而非封闭？
+      4. "如果你不同意，你该从哪里反驳"是否有答案？
+
+      评分区间：
+      - 90-100分：显著溢出效应，明确后续路径
+      - 80-89分：有后续指向，开放性讨论
+      - 70-79分：较开放但指向模糊
+      - 60-69分：结论封闭性弱
+      - <60分：自封终结争论，无后续接口
+
+      请输出JSON：
+      {"dimension": "forward_extension", "score": <0-100整数>, "evidence_quotes": ["引用"], "analysis": "分析"}
+    boundary_notes: |
+      与"结论共识度"的边界：
+      - 前瞻延展性评价未来——后续研究价值
+      - 结论共识度评价当下——共同体是否接受
+      - 时间维度不同
+
+# 判断链条顺序
+evaluation_chain:
+  description: "判断链条顺序不可颠倒"
+  sequence:
+    - dimension: problem_originality
+      reason: "起点——没有问题创新性，后续一切无意义"
+    - dimension: literature_insight
+      reason: "定位——没有现状洞察度，分析框架可能重复已有研究"
+    - dimension: analytical_framework
+      reason: "工具——没有分析框架建构力，逻辑严密性无从展开"
+    - dimension: logical_coherence
+      reason: "骨架——没有逻辑严密性，结论共识度无从验证"
+    - dimension: conclusion_consensus
+      reason: "落脚——没有结论共识度，前瞻延展性无人接续"
+    - dimension: forward_extension
+      reason: "开放——权重最低（5%），对判例分析类论文影响小"
+
+# 区分度阈值
+discrimination_threshold:
+  description: "好/坏论文的分数差距阈值"
+  levels:
+    - level: "显著差异"
+      threshold: 50
+      confidence: "high"
+      action: "直接判定"
+    - level: "明显差异"
+      threshold: 30
+      confidence: "medium"
+      action: "需专家复核"
+    - level: "相似质量"
+      threshold: 0
+      confidence: "low"
+      action: "多模型并发验证"
+
+# 专家复核触发条件
+expert_review_triggers:
+  dimension_triggers:
+    - dimension: problem_originality
+      condition: "分数<40或置信度低"
+    - dimension: conclusion_consensus
+      condition: "分数<50或多模型分歧大"
+  overall_triggers:
+    - condition: "差距30-49分"
+      action: "需专家复核"
+
+# 样本锚点
+anchors:
+  positive:
+    - paper: "林来梵《民法典编纂的宪法学透析》"
+      source: "法学研究 2016年第4期"
+    - paper: "蒋红珍《比例原则位阶秩序的司法适用》"
+      source: "法学研究 2020年第4期"
+    - paper: "章志远《迈向公私合作型行政法》"
+      source: "法学研究 2019年第2期"
+  negative:
+    - paper: "《论新质生产力区域协调发展的法治化之道》"
+      reason: "追热点式选题，问题虚构"
+    - paper: "《行政机关采集人脸信息活动的法治因应》"
+      reason: "概念混乱，理论仅为装饰"
+    - paper: "《对外援助立法论纲》"
+      reason: "文献梳理流于形式，无问题意识"

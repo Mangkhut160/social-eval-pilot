@@ -1,0 +1,16 @@
+[Unit]
+Description=SocialEval Celery worker
+After=network.target
+
+[Service]
+Type=simple
+User=socialeval
+Group=socialeval
+WorkingDirectory=/opt/social-eval
+EnvironmentFile=-/etc/socialeval/socialeval.env
+ExecStart=/usr/bin/env bash -lc 'cd /opt/social-eval && uv run celery -A src.tasks.celery_app.celery_app worker --loglevel=info'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

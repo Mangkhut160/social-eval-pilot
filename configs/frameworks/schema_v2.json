@@ -1,0 +1,207 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SocialEval Evaluation Framework Schema v2.0",
+  "description": "Schema for normalized v2 framework files with metadata, precheck, six-dimension scoring, and expert-review hints.",
+  "type": "object",
+  "required": [
+    "metadata",
+    "std_threshold",
+    "precheck",
+    "scoring_structure",
+    "dimensions",
+    "evaluation_chain",
+    "discrimination_threshold",
+    "expert_review_triggers",
+    "anchors"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["name", "version", "discipline", "source", "created"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "discipline": { "type": "string" },
+        "source": { "type": "string" },
+        "created": { "type": "string", "format": "date" },
+        "changelog": { "type": "string" }
+      }
+    },
+    "std_threshold": {
+      "type": "number",
+      "minimum": 0
+    },
+    "precheck": {
+      "type": "object",
+      "required": ["name", "description", "criteria", "prompt_template"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["key", "name_zh", "description", "pass_required"],
+            "properties": {
+              "key": { "type": "string" },
+              "name_zh": { "type": "string" },
+              "description": { "type": "string" },
+              "pass_required": { "type": "boolean" }
+            }
+          }
+        },
+        "prompt_template": { "type": "string" }
+      }
+    },
+    "scoring_structure": {
+      "type": "object",
+      "required": ["total_max", "description"],
+      "properties": {
+        "total_max": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": { "type": "string" }
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "name_zh",
+          "name_en",
+          "weight",
+          "prompt_template"
+        ],
+        "properties": {
+          "key": { "type": "string" },
+          "name_zh": { "type": "string" },
+          "name_en": { "type": "string" },
+          "weight": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "position_name": { "type": "string" },
+          "ai_difficulty": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "needs_expert_review": { "type": "boolean" },
+          "expert_review_trigger": { "type": "string" },
+          "description": { "type": "string" },
+          "scoring_criteria": { "type": "object" },
+          "positive_anchor": { "type": "object" },
+          "negative_anchor": { "type": "object" },
+          "prompt_template": { "type": "string" },
+          "boundary_notes": { "type": "string" }
+        }
+      }
+    },
+    "evaluation_chain": {
+      "type": "object",
+      "required": ["description", "sequence"],
+      "properties": {
+        "description": { "type": "string" },
+        "sequence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["dimension", "reason"],
+            "properties": {
+              "dimension": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "discrimination_threshold": {
+      "type": "object",
+      "required": ["description", "levels"],
+      "properties": {
+        "description": { "type": "string" },
+        "levels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["level", "threshold", "confidence", "action"],
+            "properties": {
+              "level": { "type": "string" },
+              "threshold": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "confidence": { "type": "string" },
+              "action": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "expert_review_triggers": {
+      "type": "object",
+      "required": ["dimension_triggers", "overall_triggers"],
+      "properties": {
+        "dimension_triggers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["dimension", "condition"],
+            "properties": {
+              "dimension": { "type": "string" },
+              "condition": { "type": "string" }
+            }
+          }
+        },
+        "overall_triggers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["condition", "action"],
+            "properties": {
+              "condition": { "type": "string" },
+              "action": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "anchors": {
+      "type": "object",
+      "required": ["positive", "negative"],
+      "properties": {
+        "positive": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["paper"],
+            "properties": {
+              "paper": { "type": "string" },
+              "source": { "type": "string" }
+            }
+          }
+        },
+        "negative": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["paper", "reason"],
+            "properties": {
+              "paper": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
